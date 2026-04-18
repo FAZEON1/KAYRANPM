@@ -58,9 +58,14 @@ def initialize_db():
             urun_adi TEXT,
             yoldaki_miktar INTEGER DEFAULT 0,
             tahmini_varis_tarihi TEXT,
+            yoldaki_tedarikci TEXT,
             yukleme_tarihi TEXT
         )
     """)
+    try:
+        c.execute("ALTER TABLE yoldaki_urunler ADD COLUMN yoldaki_tedarikci TEXT")
+    except:
+        pass
 
     # Satın alma geçmişi
     c.execute("""
@@ -238,19 +243,20 @@ def reddet_siparis(siparis_id):
     conn.commit()
     conn.close()
 
-def upsert_yoldaki_urun(sku, urun_adi, yoldaki_miktar, tahmini_varis_tarihi):
+def upsert_yoldaki_urun(sku, urun_adi, yoldaki_miktar, tahmini_varis_tarihi, yoldaki_tedarikci=""):
     conn = get_connection()
     c = conn.cursor()
     bugun = get_today()
     c.execute("""
-        INSERT INTO yoldaki_urunler (sku, urun_adi, yoldaki_miktar, tahmini_varis_tarihi, yukleme_tarihi)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO yoldaki_urunler (sku, urun_adi, yoldaki_miktar, tahmini_varis_tarihi, yoldaki_tedarikci, yukleme_tarihi)
+        VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(sku) DO UPDATE SET
             urun_adi=excluded.urun_adi,
             yoldaki_miktar=excluded.yoldaki_miktar,
             tahmini_varis_tarihi=excluded.tahmini_varis_tarihi,
+            yoldaki_tedarikci=excluded.yoldaki_tedarikci,
             yukleme_tarihi=excluded.yukleme_tarihi
-    """, (sku, urun_adi, yoldaki_miktar, tahmini_varis_tarihi, bugun))
+    """, (sku, urun_adi, yoldaki_miktar, tahmini_varis_tarihi, yoldaki_tedarikci, bugun))
     conn.commit()
     conn.close()
 

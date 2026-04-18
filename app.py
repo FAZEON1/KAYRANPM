@@ -409,23 +409,140 @@ if sayfa == "📊  Dashboard":
             st.caption("En eski stok yaşına sahip ürünler önce")
             renk_uygula(df.drop_duplicates("SKU").sort_values("Stok Yaşı", ascending=False))
 
-                # Sipariş ve muadil işlemleri
-        uyari_listesi = [(u, fd) for u, fd in gosterilecek if fd["siparis_uyarisi"] or fd["muadil_gerekli"]]
+                # Sipariş uyarıları
+        uyari_listesi = [(u, fd) for u, fd in gosterilecek if fd["siparis_uyarisi"]]
         if uyari_listesi:
             st.markdown("### 🚨 Aksiyon Gerektiren Ürünler")
             for urun, fd in uyari_listesi:
-                if fd["siparis_uyarisi"]:
-                    with st.container():
-                        st.markdown(f'<div class="uyari-box">⚠️ <b>{urun["urun_adi"]}</b> — {fd["firma"]} stoğu azalmış (Firma stok: {fd["stok"]} | Bizim stok: {urun["bizim_stok"]})</div>', unsafe_allow_html=True)
-                        col1, col2 = st.columns([3,1])
-                        with col2:
-                            miktar = st.number_input("Miktar", min_value=1, value=10, key=f"sp_{urun['sku']}_{fd['firma']}")
-                            if st.button("📦 Sipariş Önerisi Ekle", key=f"btn_{urun['sku']}_{fd['firma']}"):
-                                ekle_siparis_onerisi(fd["firma"], urun["sku"], urun["urun_adi"], miktar)
-                                st.success("Sipariş önerisi oluşturuldu!")
-                                st.rerun()
+                with st.container():
+                    st.markdown(f'<div class="uyari-box">⚠️ <b>{urun["urun_adi"]}</b> — {fd["firma"]} stoğu azalmış (Firma stok: {fd["stok"]} | Bizim stok: {urun["bizim_stok"]})</div>', unsafe_allow_html=True)
+                    col1, col2 = st.columns([3,1])
+                    with col2:
+                        miktar = st.number_input("Miktar", min_value=1, value=10, key=f"sp_{urun['sku']}_{fd['firma']}")
+                        if st.button("📦 Sipariş Önerisi Ekle", key=f"btn_{urun['sku']}_{fd['firma']}"):
+                            ekle_siparis_onerisi(fd["firma"], urun["sku"], urun["urun_adi"], miktar)
+                            st.success("Sipariş önerisi oluşturuldu!")
+                            st.rerun()
 
+        # ── DASHBOARD GRAFİKLERİ ──────────────────────────────────────
+        st.markdown("---")
+        st.markdown("### 📊 Stok & Satış Grafikleri")
 
+        # Ürün başına tek satır (firma tekrarı olmadan)
+        sku_tek = {}
+        for u, fd in gosterilecek:
+            if u["sku"] not in sku_tek:
+                sku_tek[u["sku"]] = u
+
+        urun_listesi_tek = list(sku_tek.values())
+
+        gcol1, gcol2 = st.columns(2)
+
+        # ── GRAFİK 1: Toplam Stok Dağılımı (Firma Bazlı) ──
+        with gcol1:
+            # Tüm firmalardaki toplam stok
+            firma_stok_toplam = {}
+            for u in urun_listesi_tek:
+                y = u.get("yayilim", {})
+                for firma in ["ITOPYA","HB","VATAN","MONDAY","KANAL","DIGER"]:
+                    firma_stok_toplam[firma] = firma_stok_toplam.get(firma, 0) + y.get(firma, 0)
+            firma_stok_toplam["G5F DEPO"] = sum(u["bizim_stok"] for u in urun_listesi_tek)
+
+            df_dag = pd.DataFrame([
+                {"Kanal": k, "Stok": v}
+                for k, v in firma_stok_toplam.items() if v > 0
+            ])
+            if not df_dag.empty:
+                fig_dag = px.pie(
+                    df_dag, names="Kanal", values="Stok",
+                    title="📦 Toplam Stok Dağılımı (Kanal Bazında)",
+                    color_discrete_sequence=px.colors.qualitative.Set2,
+                    hole=0.35,
+                )
+                fig_dag.update_layout(height=340, paper_bgcolor="white", margin=dict(t=40,b=0,l=0,r=0))
+                fig_dag.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig_dag, use_container_width=True)
+            else:
+                st.info("Stok dağılımı için veri yok.")
+
+        # ── GRAFİK 2: Sipariş Takvimi Özeti ──
+        with gcol2:
+            durum_sayisi = {"🔴 ACİL": 0, "🟠 Yaklaşıyor": 0, "🟡 Planlama": 0, "🟢 Normal": 0, "⚪ Veri Yok": 0}
+            durum_map = {"acil": "🔴 ACİL", "yaklasıyor": "🟠 Yaklaşıyor", "planlama": "🟡 Planlama", "normal": "🟢 Normal", "veri_yok": "⚪ Veri Yok"}
+            for u in urun_listesi_tek:
+                etiket = durum_map.get(u.get("siparis_durum", "veri_yok"), "⚪ Veri Yok")
+                durum_sayisi[etiket] += 1
+
+            df_sip = pd.DataFrame([{"Durum": k, "Ürün Sayısı": v} for k, v in durum_sayisi.items() if v > 0])
+            if not df_sip.empty:
+                renk_map = {
+                    "🔴 ACİL": "#FFCCCC", "🟠 Yaklaşıyor": "#FFE0B2",
+                    "🟡 Planlama": "#FFF9C4", "🟢 Normal": "#C8E6C9", "⚪ Veri Yok": "#F0F0F0"
+                }
+                fig_sip = px.bar(
+                    df_sip, x="Durum", y="Ürün Sayısı",
+                    title="📋 Sipariş Takvimi Özeti",
+                    color="Durum",
+                    color_discrete_map=renk_map,
+                    text="Ürün Sayısı",
+                )
+                fig_sip.update_traces(textposition='outside', marker_line_color='rgba(0,0,0,0.2)', marker_line_width=1)
+                fig_sip.update_layout(height=340, paper_bgcolor="white", plot_bgcolor="white",
+                                      showlegend=False, margin=dict(t=40,b=0,l=0,r=0))
+                st.plotly_chart(fig_sip, use_container_width=True)
+
+        gcol3, gcol4 = st.columns(2)
+
+        # ── GRAFİK 3: Satış Trendi (Top 5 ürün) ──
+        with gcol3:
+            top5 = sorted(urun_listesi_tek, key=lambda x: x.get("ortalama_haftalik_satis", 0), reverse=True)[:5]
+            if top5:
+                df_top = pd.DataFrame([{
+                    "Ürün": u["urun_adi"][:18] + ("..." if len(u["urun_adi"]) > 18 else ""),
+                    "Ort. Hft. Satış": u.get("ortalama_haftalik_satis", 0),
+                    "Trend": u.get("trend_yon", "stabil")
+                } for u in top5])
+                trend_renk = {"yukseliyor": "#2E7D32", "dusuyor": "#C62828", "stabil": "#F57C00", "yetersiz_veri": "#9E9E9E"}
+                fig_top = px.bar(
+                    df_top, x="Ort. Hft. Satış", y="Ürün",
+                    title="📈 En Çok Satan 5 Ürün",
+                    orientation="h",
+                    color="Trend",
+                    color_discrete_map=trend_renk,
+                    text="Ort. Hft. Satış",
+                )
+                fig_top.update_traces(textposition='outside')
+                fig_top.update_layout(height=340, paper_bgcolor="white", plot_bgcolor="white",
+                                      showlegend=True, margin=dict(t=40,b=0,l=0,r=0),
+                                      legend_title="Trend")
+                st.plotly_chart(fig_top, use_container_width=True)
+
+        # ── GRAFİK 4: Stok Yaşı Dağılımı ──
+        with gcol4:
+            yas_gruplari = {"🟢 0-30 Gün": 0, "🟡 30-60 Gün": 0, "🟠 60-90 Gün": 0, "🔴 90+ Gün": 0}
+            for u in urun_listesi_tek:
+                g = u.get("stok_gun", 0)
+                if g < 30: yas_gruplari["🟢 0-30 Gün"] += 1
+                elif g < 60: yas_gruplari["🟡 30-60 Gün"] += 1
+                elif g < 90: yas_gruplari["🟠 60-90 Gün"] += 1
+                else: yas_gruplari["🔴 90+ Gün"] += 1
+
+            df_yas = pd.DataFrame([{"Stok Yaşı": k, "Ürün Sayısı": v} for k, v in yas_gruplari.items() if v > 0])
+            if not df_yas.empty:
+                renk_yas = {
+                    "🟢 0-30 Gün": "#C8E6C9", "🟡 30-60 Gün": "#FFF9C4",
+                    "🟠 60-90 Gün": "#FFE0B2", "🔴 90+ Gün": "#FFCCCC"
+                }
+                fig_yas = px.pie(
+                    df_yas, names="Stok Yaşı", values="Ürün Sayısı",
+                    title="🕐 Stok Yaşı Dağılımı",
+                    color="Stok Yaşı",
+                    color_discrete_map=renk_yas,
+                    hole=0.35,
+                )
+                fig_yas.update_layout(height=340, paper_bgcolor="white", margin=dict(t=40,b=0,l=0,r=0))
+                fig_yas.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig_yas, use_container_width=True)
 
 # ════════════════════════════════════════════════════════════════════
 # 2) ÜRÜN DETAY
@@ -1274,7 +1391,7 @@ elif sayfa == "📂  Veri Yükleme":
     **📋 Excel Sekme Yapısı:**
     | Sekme | İçerik | Kolonlar |
     |-------|--------|----------|
-    | G5F STOK | Bizim depo stoğumuz + yoldaki ürünler | SKU, Ürün Adı, Kategori, Marka, Satış Fiyatı, Alış Fiyatı, Hedef Kar Marjı, Özellikler, Bizim Stok, Trendyol Stok, **Yoldaki Miktar**, **Tahmini Varış Tarihi** |
+    | G5F STOK | Bizim depo stoğumuz + yoldaki bilgiler | SKU, Ürün Adı, Kategori, Marka, Satış Fiyatı ($), Alış Fiyatı ($), Hedef Kar Marjı (%), Bizim Stok, **Yoldaki Miktar**, **Tahmini Varış Tarihi**, **Yoldaki Tedarikçi** |
     | ITOPYA / HB / VATAN / MONDAY / KANAL / DIGER | Firma stokları | SKU, Ürün Adı, Stok Miktarı, Haftalık Satış |
     """)
 
