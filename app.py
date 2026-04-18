@@ -999,9 +999,9 @@ elif sayfa == "📋  Tüm Ürünler":
         st.stop()
 
     # Özet metrikler
-    toplam_stok_degeri = sum(u["stok_degeri_fcp"] for u in urun_data)
-    toplam_satis_degeri = sum(u["stok_degeri_satis"] for u in urun_data)
-    toplam_genel_stok = sum(u["toplam_stok"] for u in urun_data)
+    toplam_stok_degeri = sum(u.get("stok_degeri_fcp", 0) for u in urun_data)
+    toplam_satis_degeri = sum(u.get("stok_degeri_satis", 0) for u in urun_data)
+    toplam_genel_stok = sum(u.get("toplam_stok", u.get("bizim_stok", 0)) for u in urun_data)
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("📦 Toplam Ürün", len(urun_data))
@@ -1011,41 +1011,97 @@ elif sayfa == "📋  Tüm Ürünler":
 
     st.markdown("---")
 
-    # Ürün seç
-    sku_secenekler = {f"{u['sku']} — {u['urun_adi']}": u['sku'] for u in urun_data}
-    secim = st.selectbox("🔍 Ürün Seç (Detay & Satın Alma)", list(sku_secenekler.keys()))
+    # SKU arama + ürün seçimi
+    col_ara, col_sec = st.columns([1, 2])
+    with col_ara:
+        sku_ara = st.text_input("🔍 SKU ile Ara", placeholder="SKU kodunu yaz...",
+                                help="SKU kodunu yazarak hızlıca filtrele")
+    with col_sec:
+        if sku_ara:
+            filtrelenmis = [u for u in urun_data
+                            if sku_ara.upper() in u["sku"].upper()
+                            or sku_ara.lower() in u["urun_adi"].lower()]
+        else:
+            filtrelenmis = urun_data
+
+        if not filtrelenmis:
+            st.warning(f"'{sku_ara}' ile eşleşen ürün bulunamadı.")
+            st.stop()
+
+        sku_secenekler = {f"{u['sku']} — {u['urun_adi']}": u['sku'] for u in filtrelenmis}
+        secim = st.selectbox("Ürün Seç", list(sku_secenekler.keys()),
+                             label_visibility="collapsed")
+
     secilen_sku = sku_secenekler[secim]
     secilen = next(u for u in urun_data if u["sku"] == secilen_sku)
-
-    # Seçili ürün bilgi kartları
-    dc1, dc2, dc3, dc4, dc5, dc6 = st.columns(6)
-    dc1.metric("G5F Depo", f"{secilen['bizim_stok']} adet")
     firma_st = secilen.get("firma_stoklari", {})
-    dc2.metric("Firmalarda", f"{secilen['toplam_firma_stok']} adet")
-    dc3.metric("Toplam Stok", f"{secilen['toplam_stok']} adet")
-    dc4.metric("FOB Price", f"${secilen['fob_price']:,.2f}" if secilen['fob_price'] else "—")
-    dc5.metric("Cost Price", f"${secilen['cost_price']:,.2f}" if secilen['cost_price'] else "—")
-    dc6.metric("⭐ FINAL COST PRICE", f"${secilen['final_cost_price']:,.2f}" if secilen['final_cost_price'] else "—",
-               help="Tüm alışların ağırlıklı ortalama maliyet fiyatı (Paçal)")
 
-    # Firma stok detayı
-    if any(v > 0 for v in firma_st.values()):
-        firma_cols = st.columns(len([f for f, v in firma_st.items() if v > 0]))
-        idx = 0
-        for firma, adet in firma_st.items():
-            if adet > 0:
-                firma_cols[idx].metric(firma, f"{adet} adet")
-                idx += 1
+    # ── Stok Dağılımı Kartı ─────────────────────────────────────────
+    st.markdown(f"### 📦 {secilen['urun_adi']} <span style='color:#90A4AE; font-size:14px;'>({secilen['sku']})</span>", unsafe_allow_html=True)
 
-    if secilen.get("kar_yuzde") is not None:
-        satis_f = secilen["satis_fiyati"]
-        kar_u = secilen["kar_usd"]
-        kar_y = secilen["kar_yuzde"]
+    bizim_stok = secilen.get("bizim_stok", 0)
+    toplam_firma = secilen.get("toplam_firma_stok", 0)
+    toplam = secilen.get("toplam_stok", bizim_stok + toplam_firma)
+
+    # Stok bar'ı
+    st.markdown(f"""
+    <div style="background:rgba(255,255,255,0.05); border-radius:12px; padding:20px; margin-bottom:16px; border:1px solid rgba(255,255,255,0.1)">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+            <span style="color:#90CAF9; font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:1px;">STOK DAĞILIMI</span>
+            <span style="color:#FFD54F; font-size:20px; font-weight:800;">Toplam: {toplam:,} adet</span>
+        </div>
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:10px;">
+            <div style="background:#1F4E79; border-radius:8px; padding:12px; text-align:center;">
+                <div style="color:#90CAF9; font-size:11px; font-weight:600; margin-bottom:4px;">G5F DEPO</div>
+                <div style="color:#FFFFFF; font-size:22px; font-weight:800;">{bizim_stok:,}</div>
+                <div style="color:#64B5F6; font-size:11px;">adet</div>
+            </div>
+            {"".join([
+                f'<div style="background:#1B3A2A; border-radius:8px; padding:12px; text-align:center;">'
+                f'<div style="color:#81C784; font-size:11px; font-weight:600; margin-bottom:4px;">{firma}</div>'
+                f'<div style="color:#FFFFFF; font-size:22px; font-weight:800;">{adet:,}</div>'
+                f'<div style="color:#66BB6A; font-size:11px;">adet</div>'
+                f'</div>'
+                for firma, adet in firma_st.items() if adet > 0
+            ])}
+            {"" if toplam_firma == 0 else ""}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Fiyat ve karlılık kartı
+    fob = secilen.get("fob_price") or secilen.get("son_fob") or 0
+    cost = secilen.get("cost") or secilen.get("son_cost") or 0
+    cost_price = secilen.get("cost_price") or secilen.get("son_cost_price") or 0
+    fcp = secilen.get("final_cost_price") or 0
+    satis = secilen.get("satis_fiyati") or 0
+    mal_y = secilen.get("mal_yuzde") or secilen.get("son_mal_yuzde") or 0
+
+    if fob > 0 or fcp > 0:
         st.markdown(f"""
-        <div class="info-box">
-        💵 Satış Fiyatı: <b>${satis_f:,.2f}</b> &nbsp;|&nbsp;
-        ⭐ Final Cost Price: <b>${secilen['final_cost_price']:,.2f}</b> &nbsp;|&nbsp;
-        📈 Kar: <b>${kar_u:,.2f} (%{kar_y:.1f})</b>
+        <div style="background:rgba(255,255,255,0.05); border-radius:12px; padding:20px; margin-bottom:16px; border:1px solid rgba(255,255,255,0.1)">
+            <div style="color:#90CAF9; font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:1px; margin-bottom:14px;">FİYAT ANALİZİ</div>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:10px;">
+                <div style="background:#1a2a3a; border-radius:8px; padding:12px; text-align:center;">
+                    <div style="color:#90A4AE; font-size:11px; margin-bottom:4px;">FOB PRICE</div>
+                    <div style="color:#FFFFFF; font-size:18px; font-weight:700;">${fob:,.2f}</div>
+                </div>
+                <div style="background:#1a2a3a; border-radius:8px; padding:12px; text-align:center;">
+                    <div style="color:#90A4AE; font-size:11px; margin-bottom:4px;">COST (%{mal_y:.1f})</div>
+                    <div style="color:#FFA726; font-size:18px; font-weight:700;">${cost:,.2f}</div>
+                </div>
+                <div style="background:#1a2a3a; border-radius:8px; padding:12px; text-align:center;">
+                    <div style="color:#90A4AE; font-size:11px; margin-bottom:4px;">COST PRICE</div>
+                    <div style="color:#FFFFFF; font-size:18px; font-weight:700;">${cost_price:,.2f}</div>
+                </div>
+                <div style="background:#1a3a00; border-radius:8px; padding:12px; text-align:center; border:1px solid #FFD54F;">
+                    <div style="color:#FFD54F; font-size:11px; font-weight:700; margin-bottom:4px;">⭐ FINAL COST PRICE</div>
+                    <div style="color:#FFD54F; font-size:22px; font-weight:800;">${fcp:,.2f}</div>
+                    <div style="color:#A5D6A7; font-size:10px;">Paçal maliyet</div>
+                </div>
+                {"" if not satis else f'<div style="background:#1a2a3a; border-radius:8px; padding:12px; text-align:center;"><div style="color:#90A4AE; font-size:11px; margin-bottom:4px;">SATIŞ FİYATI</div><div style="color:#29B6F6; font-size:18px; font-weight:700;">${satis:,.2f}</div></div>'}
+                {"" if not (satis > 0 and fcp > 0) else f'<div style="background:#1B3A2A; border-radius:8px; padding:12px; text-align:center;"><div style="color:#81C784; font-size:11px; margin-bottom:4px;">KAR</div><div style="color:#A5D6A7; font-size:18px; font-weight:700;">${satis-fcp:,.2f} (%{((satis-fcp)/satis*100):.1f})</div></div>'}
+            </div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1137,23 +1193,23 @@ elif sayfa == "📋  Tüm Ürünler":
     st.markdown("#### 📊 Tüm Ürünler Özet")
     rows_oz = []
     for u in urun_data:
-        fs = u.get("firma_stoklari",{})
+        fs = u.get("firma_stoklari", {})
         rows_oz.append({
             "SKU": u["sku"],
             "Ürün Adı": u["urun_adi"],
             "Kategori": u.get("kategori",""),
-            "G5F Depo": u["bizim_stok"],
-            "ITOPYA": fs.get("ITOPYA",0),
-            "HB": fs.get("HB",0),
-            "VATAN": fs.get("VATAN",0),
-            "MONDAY": fs.get("MONDAY",0),
-            "KANAL": fs.get("KANAL",0),
-            "Toplam Stok": u["toplam_stok"],
-            "Satış Fiyatı ($)": f"${u['satis_fiyati']:,.2f}" if u['satis_fiyati'] else "—",
-            "FOB Price ($)": f"${u['fob_price']:,.2f}" if u['fob_price'] else "—",
-            "Cost Price ($)": f"${u['cost_price']:,.2f}" if u['cost_price'] else "—",
-            "⭐ FINAL COST ($)": f"${u['final_cost_price']:,.2f}" if u['final_cost_price'] else "—",
-            "Sipariş Sayısı": u["siparis_sayisi"],
+            "G5F Depo": u.get("bizim_stok", 0),
+            "ITOPYA": fs.get("ITOPYA", 0),
+            "HB": fs.get("HB", 0),
+            "VATAN": fs.get("VATAN", 0),
+            "MONDAY": fs.get("MONDAY", 0),
+            "KANAL": fs.get("KANAL", 0),
+            "Toplam Stok": u.get("toplam_stok", u.get("bizim_stok", 0)),
+            "Satış Fiyatı ($)": f"${u.get('satis_fiyati',0):,.2f}" if u.get('satis_fiyati') else "—",
+            "FOB Price ($)": f"${u.get('fob_price', u.get('son_fob', 0)):,.2f}" if u.get('fob_price') or u.get('son_fob') else "—",
+            "Cost Price ($)": f"${u.get('cost_price', u.get('son_cost_price', 0)):,.2f}" if u.get('cost_price') or u.get('son_cost_price') else "—",
+            "⭐ FINAL COST ($)": f"${u.get('final_cost_price',0):,.2f}" if u.get('final_cost_price') else "—",
+            "Sipariş Sayısı": u.get("siparis_sayisi", 0),
         })
     df_oz = pd.DataFrame(rows_oz)
     def oz_rengi(row):
