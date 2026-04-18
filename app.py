@@ -206,6 +206,7 @@ with st.sidebar:
         "🔍  Ürün Detay",
         "📈  Genel Analiz",
         "📋  Tüm Ürünler",
+        "🛒  Satın Alma Geçmişi",
         "📦  Sipariş Önerisi",
         "📂  Veri Yükleme",
         "📄  Raporlar",
@@ -985,7 +986,7 @@ elif sayfa == "📈  Genel Analiz":
 # ════════════════════════════════════════════════════════════════════
 elif sayfa == "📋  Tüm Ürünler":
     st.markdown('<div class="baslik">📋 Tüm Ürünler</div>', unsafe_allow_html=True)
-    st.markdown('<div class="alt-baslik">FOB Price, Cost, Cost Price, Final Cost Price (Paçal) ve satın alma geçmişi</div>', unsafe_allow_html=True)
+    st.markdown('<div class="alt-baslik">FOB Price · Cost · Cost Price · Final Cost Price (Paçal) · Stok Dağılımı</div>', unsafe_allow_html=True)
 
     try:
         urun_data = tum_urunler_listesi()
@@ -998,87 +999,93 @@ elif sayfa == "📋  Tüm Ürünler":
         st.stop()
 
     # Özet metrikler
-    toplam_stok_degeri = sum(u["stok_degeri_fcp"] for u in urun_data if u["final_cost_price"] > 0)
+    toplam_stok_degeri = sum(u["stok_degeri_fcp"] for u in urun_data)
     toplam_satis_degeri = sum(u["stok_degeri_satis"] for u in urun_data)
-    toplam_potansiyel_kar = toplam_satis_degeri - toplam_stok_degeri
-    urun_sayisi = len(urun_data)
-    fiyatli_urun = sum(1 for u in urun_data if u["final_cost_price"] > 0)
+    toplam_genel_stok = sum(u["toplam_stok"] for u in urun_data)
 
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("📦 Toplam Ürün", urun_sayisi)
-    m2.metric("💰 Stok Değeri (COST)", f"${toplam_stok_degeri:,.0f}")
-    m3.metric("💵 Stok Değeri (Satış)", f"${toplam_satis_degeri:,.0f}")
-    m4.metric("📈 Potansiyel Kar", f"${toplam_potansiyel_kar:,.0f}")
+    m1.metric("📦 Toplam Ürün", len(urun_data))
+    m2.metric("🏭 Toplam Stok (Tüm Kanallar)", f"{toplam_genel_stok:,} adet")
+    m3.metric("💰 Depo Stok Değeri (Cost)", f"${toplam_stok_degeri:,.0f}")
+    m4.metric("💵 Depo Stok Değeri (Satış)", f"${toplam_satis_degeri:,.0f}")
 
     st.markdown("---")
 
-    # Ürün seçimi — detay paneli
+    # Ürün seç
     sku_secenekler = {f"{u['sku']} — {u['urun_adi']}": u['sku'] for u in urun_data}
-    secim = st.selectbox("🔍 Ürün Seç (Detay & Satın Alma Geçmişi)", list(sku_secenekler.keys()))
+    secim = st.selectbox("🔍 Ürün Seç (Detay & Satın Alma)", list(sku_secenekler.keys()))
     secilen_sku = sku_secenekler[secim]
-    secilen_urun = next(u for u in urun_data if u["sku"] == secilen_sku)
+    secilen = next(u for u in urun_data if u["sku"] == secilen_sku)
 
-    # Seçili ürün bilgi kartı
-    with st.container():
-        dc1, dc2, dc3, dc4, dc5 = st.columns(5)
-        dc1.metric("Bizim Stok", f"{secilen_urun['bizim_stok']} adet")
-        dc2.metric("Son FOB Price", f"${secilen_urun['son_fob']:,.2f}" if secilen_urun['son_fob'] else "—")
-        dc3.metric("Son Cost", f"${secilen_urun['son_cost']:,.2f}" if secilen_urun['son_cost'] else "—")
-        dc4.metric("Son Cost Price", f"${secilen_urun['son_cost_price']:,.2f}" if secilen_urun['son_cost_price'] else "—")
-        fcp = secilen_urun["final_cost_price"]
-        dc5.metric("⭐ FINAL COST PRICE", f"${fcp:,.2f}" if fcp else "—",
-                   help="Tüm alışların ağırlıklı ortalama maliyet fiyatı (Paçal)")
+    # Seçili ürün bilgi kartları
+    dc1, dc2, dc3, dc4, dc5, dc6 = st.columns(6)
+    dc1.metric("G5F Depo", f"{secilen['bizim_stok']} adet")
+    firma_st = secilen.get("firma_stoklari", {})
+    dc2.metric("Firmalarda", f"{secilen['toplam_firma_stok']} adet")
+    dc3.metric("Toplam Stok", f"{secilen['toplam_stok']} adet")
+    dc4.metric("FOB Price", f"${secilen['fob_price']:,.2f}" if secilen['fob_price'] else "—")
+    dc5.metric("Cost Price", f"${secilen['cost_price']:,.2f}" if secilen['cost_price'] else "—")
+    dc6.metric("⭐ FINAL COST PRICE", f"${secilen['final_cost_price']:,.2f}" if secilen['final_cost_price'] else "—",
+               help="Tüm alışların ağırlıklı ortalama maliyet fiyatı (Paçal)")
 
-        if secilen_urun.get("kar_yuzde") is not None:
-            satis_f = secilen_urun["satis_fiyati"]
-            kar_y = secilen_urun["kar_yuzde"]
-            kar_u = secilen_urun["kar_usd"]
-            renk = "normal" if kar_y >= 20 else "inverse"
-            st.metric(f"Satış Fiyatı: ${satis_f:,.2f} | Kar: ${kar_u:,.2f} (%{kar_y:.1f})",
-                      "Kar Durumu", delta=f"%{kar_y:.1f}", delta_color=renk)
+    # Firma stok detayı
+    if any(v > 0 for v in firma_st.values()):
+        firma_cols = st.columns(len([f for f, v in firma_st.items() if v > 0]))
+        idx = 0
+        for firma, adet in firma_st.items():
+            if adet > 0:
+                firma_cols[idx].metric(firma, f"{adet} adet")
+                idx += 1
 
-    # Satın Alma Geçmişi — Bu ürün için
-    st.markdown(f"#### 📋 Satın Alma Geçmişi — {secilen_urun['urun_adi']}")
+    if secilen.get("kar_yuzde") is not None:
+        satis_f = secilen["satis_fiyati"]
+        kar_u = secilen["kar_usd"]
+        kar_y = secilen["kar_yuzde"]
+        st.markdown(f"""
+        <div class="info-box">
+        💵 Satış Fiyatı: <b>${satis_f:,.2f}</b> &nbsp;|&nbsp;
+        ⭐ Final Cost Price: <b>${secilen['final_cost_price']:,.2f}</b> &nbsp;|&nbsp;
+        📈 Kar: <b>${kar_u:,.2f} (%{kar_y:.1f})</b>
+        </div>
+        """, unsafe_allow_html=True)
 
-    if not secilen_urun["kayitlar"]:
-        st.info("Bu ürün için henüz satın alma kaydı yok.")
+    # Satın Alma Geçmişi — bu ürün için
+    st.markdown(f"#### 📋 Satın Alma Geçmişi — {secilen['urun_adi']}")
+
+    if not secilen["kayitlar"]:
+        st.info("Bu ürün için henüz satın alma kaydı yok. Aşağıdan ekleyebilirsiniz.")
     else:
-        kayitlar = secilen_urun["kayitlar"]
+        kayitlar = secilen["kayitlar"]
         rows_k = []
         for k in kayitlar:
-            fob = k.get("alis_fiyati") or 0
+            fob = k.get("alis_fiyati") or k.get("birim_alis_fiyati") or 0
             mal_y = k.get("maliyet_yuzdesi") or 0
             cost = fob * mal_y / 100
             cost_price = fob + cost
+            adet = k.get("adet") or 0
             rows_k.append({
+                "ID": k["id"],
                 "Tarih": k.get("satin_alma_tarihi",""),
                 "Tedarikçi": k.get("tedarikci",""),
-                "Adet": k.get("adet",0),
+                "Adet": adet,
                 "FOB Price ($)": f"${fob:,.2f}",
                 "Cost %": f"%{mal_y:.1f}",
                 "Cost ($)": f"${cost:,.2f}",
                 "Cost Price ($)": f"${cost_price:,.2f}",
-                "Toplam ($)": f"${cost_price * k.get('adet',0):,.0f}",
+                "Toplam ($)": f"${cost_price * adet:,.0f}",
                 "Notlar": k.get("notlar","") or "",
-                "ID": k["id"],
             })
-
         df_k = pd.DataFrame(rows_k)
+        st.dataframe(df_k.drop(columns=["ID"]), use_container_width=True, height=230, hide_index=True)
 
-        def gecmis_rengi(row):
-            return ["background-color:#1B5E20; color:#A5D6A7" if i == 0
-                    else "" for i in range(len(row))]
-
-        st.dataframe(df_k.drop(columns=["ID"]), use_container_width=True, height=250, hide_index=True)
-
-        # Paçal hesap özeti
+        # Paçal özet
         toplam_a = sum(k.get("adet",0) for k in kayitlar)
-        toplam_m = sum((k.get("alis_fiyati",0) or 0) * (1 + (k.get("maliyet_yuzdesi",0) or 0)/100) * (k.get("adet",0) or 0) for k in kayitlar)
+        toplam_m = sum((k.get("alis_fiyati") or k.get("birim_alis_fiyati") or 0) * (1 + (k.get("maliyet_yuzdesi") or 0)/100) * (k.get("adet",0) or 0) for k in kayitlar)
         pacal = toplam_m / toplam_a if toplam_a > 0 else 0
         st.markdown(f"""
         <div class="info-box">
-        ⭐ <b>FINAL COST PRICE (Paçal):</b> 
-        Toplam {toplam_a:,} adet alındı | Toplam maliyet: ${toplam_m:,.0f} | 
+        ⭐ <b>FINAL COST PRICE (Paçal):</b>
+        {toplam_a:,} adet alındı | Toplam maliyet: ${toplam_m:,.0f} |
         <span style="color:#FFD54F; font-size:16px; font-weight:800">${pacal:,.2f} / adet</span>
         </div>
         """, unsafe_allow_html=True)
@@ -1087,87 +1094,175 @@ elif sayfa == "📋  Tüm Ürünler":
             silme_id = st.number_input("Silinecek ID", min_value=1, step=1, key="sil_id_tu")
             if st.button("Sil", key="sil_btn_tu"):
                 sil_satin_alma(int(silme_id))
-                st.success(f"Kayıt #{silme_id} silindi.")
+                st.success(f"#{silme_id} silindi.")
                 st.rerun()
 
     # Yeni Satın Alma Ekle
     st.markdown("---")
-    st.markdown(f"#### ➕ Yeni Satın Alma Ekle — {secilen_urun['urun_adi']}")
-
-    onceki_tedarikciler = get_tum_tedarikciler()
+    st.markdown(f"#### ➕ Yeni Satın Alma Ekle — {secilen['urun_adi']}")
+    onceki = get_tum_tedarikciler()
     with st.form("tu_satin_alma_form", clear_on_submit=True):
         fc1, fc2 = st.columns(2)
         with fc1:
             tedarikci = st.text_input("Tedarikçi *",
-                placeholder="örn: ABC Elektronik",
-                help=f"Önceki: {', '.join(onceki_tedarikciler[:4])}" if onceki_tedarikciler else "")
-            satin_alma_tarihi = st.date_input("Satın Alma Tarihi *", value=date.today())
-            notlar = st.text_area("Notlar", placeholder="Sipariş no, kargo...")
+                help=f"Önceki: {', '.join(onceki[:4])}" if onceki else "")
+            satin_alma_tarihi = st.date_input("Tarih *", value=date.today())
+            notlar = st.text_area("Notlar")
         with fc2:
             adet = st.number_input("Adet *", min_value=1, value=100, step=1)
-            fob_price = st.number_input("FOB Price ($) *", min_value=0.0, value=0.0, step=0.01, format="%.2f",
-                help="Üreticiye ödenen birim fiyat (USD)")
-            maliyet_yuzdesi = st.number_input("Ek Maliyet (%)",
-                min_value=0.0, max_value=200.0, value=0.0, step=0.5, format="%.1f",
-                help="Nakliye+gümrük+diğer / FOB oranı. Örn: %20 → $100 FOB + $20 = $120 Cost Price")
-
+            fob_price = st.number_input("FOB Price ($) *", min_value=0.0, value=0.0, step=0.01, format="%.2f")
+            maliyet_yuzdesi = st.number_input("Ek Maliyet (%)", min_value=0.0, max_value=200.0, value=0.0, step=0.5, format="%.1f",
+                help="Nakliye+gümrük+diğer masrafların FOB'a oranı")
             if fob_price > 0:
                 cost = fob_price * maliyet_yuzdesi / 100
-                cost_price = fob_price + cost
-                st.markdown(f"""
-                <div class="info-box" style="font-size:12px">
-                FOB: ${fob_price:.2f} | Cost: ${cost:.2f} (%{maliyet_yuzdesi:.1f})<br>
-                <b>Cost Price: ${cost_price:.2f}</b><br>
-                Toplam sipariş: ${cost_price * adet:,.0f}
-                </div>
-                """, unsafe_allow_html=True)
-
+                cp = fob_price + cost
+                st.markdown(f"""<div class="info-box" style="font-size:12px">
+                FOB: ${fob_price:.2f} + Cost: ${cost:.2f} = <b>Cost Price: ${cp:.2f}</b><br>
+                Toplam: ${cp * adet:,.0f}
+                </div>""", unsafe_allow_html=True)
         submitted = st.form_submit_button("💾 Kaydet", type="primary", use_container_width=True)
 
     if submitted:
-        if not tedarikci.strip():
-            st.error("Tedarikçi adı zorunludur.")
-        elif fob_price <= 0:
-            st.error("FOB Price girilmesi zorunludur.")
+        if not tedarikci.strip(): st.error("Tedarikçi zorunludur.")
+        elif fob_price <= 0: st.error("FOB Price girilmesi zorunludur.")
         else:
-            ekle_satin_alma(secilen_sku, secilen_urun["urun_adi"],
-                            tedarikci.strip(), str(satin_alma_tarihi),
-                            adet, fob_price, maliyet_yuzdesi, notlar.strip())
-            st.success(f"✅ Kaydedildi! Cost Price: ${fob_price*(1+maliyet_yuzdesi/100):.2f}/adet")
+            ekle_satin_alma(secilen_sku, secilen["urun_adi"], tedarikci.strip(),
+                            str(satin_alma_tarihi), adet, fob_price, maliyet_yuzdesi, notlar.strip())
+            cp = fob_price * (1 + maliyet_yuzdesi/100)
+            st.success(f"✅ Kaydedildi! Cost Price: ${cp:.2f}/adet")
             st.rerun()
 
     st.markdown("---")
     # Tüm ürünler özet tablosu
-    st.markdown("#### 📊 Tüm Ürünler Özet Tablosu")
+    st.markdown("#### 📊 Tüm Ürünler Özet")
     rows_oz = []
     for u in urun_data:
+        fs = u.get("firma_stoklari",{})
         rows_oz.append({
             "SKU": u["sku"],
             "Ürün Adı": u["urun_adi"],
             "Kategori": u.get("kategori",""),
-            "Stok": u["bizim_stok"],
+            "G5F Depo": u["bizim_stok"],
+            "ITOPYA": fs.get("ITOPYA",0),
+            "HB": fs.get("HB",0),
+            "VATAN": fs.get("VATAN",0),
+            "MONDAY": fs.get("MONDAY",0),
+            "KANAL": fs.get("KANAL",0),
+            "Toplam Stok": u["toplam_stok"],
             "Satış Fiyatı ($)": f"${u['satis_fiyati']:,.2f}" if u['satis_fiyati'] else "—",
-            "Son FOB ($)": f"${u['son_fob']:,.2f}" if u['son_fob'] else "—",
-            "Son Cost Price ($)": f"${u['son_cost_price']:,.2f}" if u['son_cost_price'] else "—",
-            "⭐ FINAL COST PRICE ($)": f"${u['final_cost_price']:,.2f}" if u['final_cost_price'] else "—",
-            "Toplam Stok Değeri ($)": f"${u['stok_degeri_fcp']:,.0f}" if u['stok_degeri_fcp'] else "—",
+            "FOB Price ($)": f"${u['fob_price']:,.2f}" if u['fob_price'] else "—",
+            "Cost Price ($)": f"${u['cost_price']:,.2f}" if u['cost_price'] else "—",
+            "⭐ FINAL COST ($)": f"${u['final_cost_price']:,.2f}" if u['final_cost_price'] else "—",
             "Sipariş Sayısı": u["siparis_sayisi"],
-            "Toplam Alınan": f"{u['toplam_alinan_adet']:,}" if u['toplam_alinan_adet'] else "—",
         })
-
     df_oz = pd.DataFrame(rows_oz)
-
     def oz_rengi(row):
         styles = [""] * len(row)
         cols = list(row.index)
-        if "⭐ FINAL COST PRICE ($)" in cols:
-            fcp_val = row.get("⭐ FINAL COST PRICE ($)","—")
-            if fcp_val != "—":
-                styles[cols.index("⭐ FINAL COST PRICE ($)")] = "background-color:#1a3a00; color:#FFD54F; font-weight:800; font-size:14px"
+        if "⭐ FINAL COST ($)" in cols:
+            styles[cols.index("⭐ FINAL COST ($)")] = "background-color:#1a3a00; color:#FFD54F; font-weight:800"
+        if "Toplam Stok" in cols:
+            v = row.get("Toplam Stok", 0)
+            if isinstance(v, (int, float)) and v > 0:
+                styles[cols.index("Toplam Stok")] = "background-color:#0D2744; color:#90CAF9; font-weight:700"
         return styles
+    st.dataframe(df_oz.style.apply(oz_rengi, axis=1), use_container_width=True, height=400, hide_index=True)
 
-    styled_oz = df_oz.style.apply(oz_rengi, axis=1)
-    st.dataframe(styled_oz, use_container_width=True, height=400, hide_index=True)
+
+elif sayfa == "🛒  Satın Alma Geçmişi":
+    st.markdown('<div class="baslik">🛒 Satın Alma Geçmişi</div>', unsafe_allow_html=True)
+    st.markdown('<div class="alt-baslik">Tüm ürünlerin satın alma kayıtları — tarih, tedarikçi, FOB, Cost Price</div>', unsafe_allow_html=True)
+
+    tum_kayitlar = get_satin_alma_gecmisi()
+
+    if not tum_kayitlar:
+        st.info("Henüz satın alma kaydı yok. 'Tüm Ürünler' sayfasından kayıt ekleyebilirsiniz.")
+        st.stop()
+
+    # Filtreler
+    fc1, fc2, fc3 = st.columns([2,2,1])
+    with fc1:
+        try:
+            urun_data_f = tum_urunler_listesi()
+            sku_filtre_options = ["Tüm Ürünler"] + [f"{u['sku']} — {u['urun_adi']}" for u in urun_data_f]
+        except:
+            sku_filtre_options = ["Tüm Ürünler"]
+        sku_filtre = st.selectbox("Ürün Filtresi", sku_filtre_options, key="sg_sku")
+    with fc2:
+        ted_filtre = st.text_input("Tedarikçi Ara...", key="sg_ted")
+    with fc3:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🔄 Yenile", use_container_width=True):
+            st.rerun()
+
+    # Filtrele
+    kayitlar = tum_kayitlar
+    if sku_filtre != "Tüm Ürünler":
+        filtre_sku = sku_filtre.split(" — ")[0]
+        kayitlar = [k for k in kayitlar if k["sku"] == filtre_sku]
+    if ted_filtre:
+        kayitlar = [k for k in kayitlar if ted_filtre.lower() in (k.get("tedarikci","") or "").lower()]
+
+    # Özet metrikler
+    tm1, tm2, tm3, tm4 = st.columns(4)
+    tm1.metric("📋 Toplam Kayıt", len(kayitlar))
+    tm2.metric("📦 Toplam Adet", f"{sum(k.get('adet',0) for k in kayitlar):,}")
+    toplam_fob_tutar = sum((k.get('alis_fiyati') or k.get('birim_alis_fiyati') or 0) * (k.get('adet') or 0) for k in kayitlar)
+    toplam_cp_tutar = sum(k.get('toplam_maliyet') or 0 for k in kayitlar)
+    tm3.metric("💵 Toplam FOB Tutar", f"${toplam_fob_tutar:,.0f}")
+    tm4.metric("💰 Toplam Cost Tutar", f"${toplam_cp_tutar:,.0f}")
+
+    st.markdown("---")
+
+    # Tablo
+    rows_sg = []
+    for k in kayitlar:
+        fob = k.get("alis_fiyati") or k.get("birim_alis_fiyati") or 0
+        mal_y = k.get("maliyet_yuzdesi") or 0
+        cost = fob * mal_y / 100
+        cost_price = fob + cost
+        adet = k.get("adet") or 0
+        rows_sg.append({
+            "ID": k["id"],
+            "Tarih": k.get("satin_alma_tarihi",""),
+            "SKU": k["sku"],
+            "Ürün Adı": k.get("urun_adi",""),
+            "Tedarikçi": k.get("tedarikci",""),
+            "Adet": adet,
+            "FOB Price ($)": f"${fob:,.2f}",
+            "Cost %": f"%{mal_y:.1f}",
+            "Cost ($)": f"${cost:,.2f}",
+            "Cost Price ($)": f"${cost_price:,.2f}",
+            "Toplam Tutar ($)": f"${cost_price * adet:,.0f}",
+            "Notlar": k.get("notlar","") or "",
+        })
+
+    df_sg = pd.DataFrame(rows_sg)
+    st.dataframe(df_sg.drop(columns=["ID"]), use_container_width=True, height=500, hide_index=True)
+
+    # Silme
+    with st.expander("🗑️ Kayıt Sil"):
+        silme_id = st.number_input("Silinecek ID", min_value=1, step=1, key="sg_sil_id")
+        if st.button("Sil", key="sg_sil_btn"):
+            sil_satin_alma(int(silme_id))
+            st.success(f"#{silme_id} silindi.")
+            st.rerun()
+
+    # Tedarikçi bazında özet grafik
+    if len(kayitlar) > 1:
+        ted_tutar = {}
+        for k in kayitlar:
+            t = k.get("tedarikci","Diğer") or "Diğer"
+            fob = k.get("alis_fiyati") or k.get("birim_alis_fiyati") or 0
+            mal_y = k.get("maliyet_yuzdesi") or 0
+            cp = fob * (1 + mal_y/100)
+            ted_tutar[t] = ted_tutar.get(t,0) + cp * (k.get("adet") or 0)
+        df_ted = pd.DataFrame([{"Tedarikçi":k,"Tutar ($)":v} for k,v in ted_tutar.items()])
+        fig_ted = px.pie(df_ted, names="Tedarikçi", values="Tutar ($)",
+                         title="Tedarikçi Bazında Cost Tutar Dağılımı",
+                         height=300, color_discrete_sequence=px.colors.qualitative.Set2)
+        fig_ted.update_layout(paper_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig_ted, use_container_width=True)
 
 
 elif sayfa == "📦  Sipariş Önerisi":

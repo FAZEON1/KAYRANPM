@@ -83,8 +83,11 @@ def initialize_db():
             kayit_tarihi TEXT
         )
     """)
-    # Eski tablolara eksik kolonları ekle
-    for kolon, tip in [("alis_fiyati","REAL"), ("maliyet_yuzdesi","REAL")]:
+    # Eski tablolara eksik kolonları ekle (migration)
+    for kolon, tip in [
+        ("alis_fiyati", "REAL"),
+        ("maliyet_yuzdesi", "REAL"),
+    ]:
         try:
             c.execute(f"ALTER TABLE satin_alma_gecmisi ADD COLUMN {kolon} {tip}")
         except:
@@ -430,19 +433,6 @@ def get_urun_detay(sku):
     row = c.fetchone()
     conn.close()
     return dict(row) if row else None
-
-def ekle_satin_alma(sku, urun_adi, tedarikci, satin_alma_tarihi, adet, birim_alis_fiyati, toplam_maliyet, notlar=""):
-    """Yeni satın alma kaydı ekler"""
-    conn = get_connection()
-    c = conn.cursor()
-    birim_maliyet = (toplam_maliyet / adet) if adet > 0 else 0
-    c.execute("""
-        INSERT INTO satin_alma_gecmisi
-        (sku, urun_adi, tedarikci, satin_alma_tarihi, adet, birim_alis_fiyati, toplam_maliyet, birim_maliyet, notlar, kayit_tarihi)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (sku, urun_adi, tedarikci, satin_alma_tarihi, adet, birim_alis_fiyati, toplam_maliyet, birim_maliyet, notlar, get_today()))
-    conn.commit()
-    conn.close()
 
 def get_satin_alma_gecmisi(sku=None):
     """SKU bazında veya tüm satın alma geçmişini getirir"""

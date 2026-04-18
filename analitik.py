@@ -428,19 +428,14 @@ def genel_analiz_hesapla():
 
 
 def tum_urunler_listesi():
-    """
-    Tüm ürünlerin FOB, COST, COST PRICE ve FINAL COST PRICE (paçal) hesabını döndürür.
-    
-    FOB Price   = alış fiyatı (birim)
-    COST        = FOB × maliyet_yuzdesi/100  (masraf tutarı)
-    COST PRICE  = FOB + COST = FOB × (1 + maliyet_yuzdesi/100)
-    FINAL COST PRICE (paçal) = Σ(adet × COST PRICE) / Σadet  (ağırlıklı ort.)
-    """
+    """Tüm ürünlerin stok, fiyat ve FINAL COST PRICE hesabını döndürür."""
     conn = get_connection()
     c = conn.cursor()
     c.execute("SELECT * FROM urunler ORDER BY urun_adi")
     urunler = [dict(r) for r in c.fetchall()]
     conn.close()
+
+    FIRMALAR = ["ITOPYA", "HB", "VATAN", "MONDAY", "KANAL", "DIGER"]
 
     sonuclar = []
     for u in urunler:
@@ -449,20 +444,32 @@ def tum_urunler_listesi():
         hedef_marj = u.get("hedef_kar_marji") or 0
         bizim_stok = u.get("bizim_stok") or 0
 
-        # Satın alma geçmişini çek
-        sa_ozet = get_satin_alma_ozet(sku)
-        kayitlar = []
+        # Firma stoklarını çek
         conn2 = get_connection()
         c2 = conn2.cursor()
+        firma_stoklari = {}
+        for firma in FIRMALAR:
+            c2.execute("""
+                SELECT stok_miktari FROM firma_stok
+                WHERE sku=? AND firma=?
+                AND yukleme_tarihi=(SELECT MAX(yukleme_tarihi) FROM firma_stok WHERE sku=? AND firma=?)
+            """, (sku, firma, sku, firma))
+            row = c2.fetchone()
+            firma_stoklari[firma] = row["stok_miktari"] if row else 0
+
+        # Satın alma geçmişini çek
         c2.execute("SELECT * FROM satin_alma_gecmisi WHERE sku=? ORDER BY satin_alma_tarihi DESC", (sku,))
         kayitlar = [dict(r) for r in c2.fetchall()]
         conn2.close()
 
-        # FINAL COST PRICE (paçal) — ağırlıklı ortalama COST PRICE
+        toplam_firma_stok = sum(firma_stoklari.values())
+        toplam_stok = bizim_stok + toplam_firma_stok
+
+        # FINAL COST PRICE (paçal)
         toplam_maliyet_x_adet = 0
         toplam_adet = 0
         for k in kayitlar:
-            fob = k.get("alis_fiyati") or 0
+            fob = k.get("alis_fiyati") or k.get("birim_alis_fiyati") or 0
             mal_yuzde = k.get("maliyet_yuzdesi") or 0
             adet = k.get("adet") or 0
             cost_price = fob * (1 + mal_yuzde / 100)
@@ -471,17 +478,20 @@ def tum_urunler_listesi():
 
         final_cost_price = (toplam_maliyet_x_adet / toplam_adet) if toplam_adet > 0 else 0
 
-        # Son alış FOB ve COST bilgileri
-        son_fob = kayitlar[0].get("alis_fiyati") or 0 if kayitlar else 0
-        son_mal_yuzde = kayitlar[0].get("maliyet_yuzdesi") or 0 if kayitlar else 0
-        son_cost = son_fob * (son_mal_yuzde / 100)
-        son_cost_price = son_fob + son_cost
+        # En son alış bilgileri
+        if kayitlar:
+            son_k = kayitlar[0]
+            fob_price = son_k.get("alis_fiyati") or son_k.get("birim_alis_fiyati") or 0
+            mal_yuzde = son_k.get("maliyet_yuzdesi") or 0
+        else:
+            fob_price = u.get("alis_fiyati") or 0
+            mal_yuzde = 0
 
-        # Stok değeri
+        cost = fob_price * (mal_yuzde / 100)
+        cost_price = fob_price + cost
         stok_degeri_fcp = bizim_stok * final_cost_price
         stok_degeri_satis = bizim_stok * satis_fiyati
 
-        # Kar marjı (satış - paçal maliyet)
         if satis_fiyati > 0 and final_cost_price > 0:
             kar_usd = satis_fiyati - final_cost_price
             kar_yuzde = (kar_usd / satis_fiyati) * 100
@@ -495,13 +505,16 @@ def tum_urunler_listesi():
             "kategori": u.get("kategori") or "",
             "marka": u.get("marka") or "",
             "bizim_stok": bizim_stok,
+            "firma_stoklari": firma_stoklari,
+            "toplam_firma_stok": toplam_firma_stok,
+            "toplam_stok": toplam_stok,
             "satis_fiyati": satis_fiyati,
             "hedef_marj": hedef_marj,
             "final_cost_price": final_cost_price,
-            "son_fob": son_fob,
-            "son_cost": son_cost,
-            "son_cost_price": son_cost_price,
-            "son_mal_yuzde": son_mal_yuzde,
+            "fob_price": fob_price,
+            "cost": cost,
+            "cost_price": cost_price,
+            "mal_yuzde": mal_yuzde,
             "stok_degeri_fcp": stok_degeri_fcp,
             "stok_degeri_satis": stok_degeri_satis,
             "kar_usd": kar_usd,
