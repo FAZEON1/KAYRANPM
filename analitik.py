@@ -1,0 +1,630 @@
+from datetime import datetime, date
+from database import (get_all_dashboard_data, get_muadil_oneriler,
+                      ekle_siparis_onerisi, get_connection, get_yoldaki_urunler,
+                      get_tum_gecmis_satislar, get_gecmis_satis_firma_bazli,
+                      get_satin_alma_ozet)
+
+FIRMA_LISTESI = ["ITOPYA", "HB", "VATAN", "MONDAY", "KANAL", "DIGER"]
+
+def stok_yasi_hesapla(ilk_giris_tarihi_str):
+    """Stok yaşını gün olarak hesaplar ve renk döndürür"""
+    if not ilk_giris_tarihi_str:
+        return 0, "yok"
+    try:
+        ilk = datetime.strptime(ilk_giris_tarihi_str, "%Y-%m-%d").date()
+        gun = (date.today() - ilk).days
+        if gun >= 90:
+            return gun, "kirmizi"
+        elif gun >= 60:
+            return gun, "turuncu"
+        elif gun >= 30:
+            return gun, "sari"
+        else:
+            return gun, "yesil"
+    except:
+        return 0, "yok"
+
+def kac_gunluk_satis(bizim_stok, haftalik_satis):
+    """Bizim stok ile kaç günlük satış yapılabileceğini hesaplar"""
+    if not haftalik_satis or haftalik_satis == 0:
+        return None, "yok"
+    gunluk_satis = haftalik_satis / 7
+    gun = int(bizim_stok / gunluk_satis) if gunluk_satis > 0 else 0
+    if gun <= 15:
+        renk = "kirmizi"
+    elif gun >= 30:
+        renk = "yesil"
+    else:
+        renk = "turuncu"
+    return gun, renk
+
+def satis_performansi(satis_listesi):
+    """Firmaların satışlarını karşılaştırarak performans sıralaması döndürür"""
+    if not satis_listesi:
+        return {}
+    gecerli = [(f, s) for f, s in satis_listesi if s is not None and s > 0]
+    if not gecerli:
+        return {f: "veri yok" for f, _ in satis_listesi}
+    
+    maks = max(s for _, s in gecerli)
+    if maks == 0:
+        return {f: "veri yok" for f, _ in satis_listesi}
+    
+    sonuc = {}
+    for firma, satis in satis_listesi:
+        if satis is None:
+            sonuc[firma] = "veri yok"
+            continue
+        oran = satis / maks
+        if oran >= 0.7:
+            sonuc[firma] = "Çok İyi"
+        elif oran >= 0.4:
+            sonuc[firma] = "İyi"
+        else:
+            sonuc[firma] = "Düşük"
+    return sonuc
+
+def stok_yayilimi(urun_sku, firma_data):
+    """Ürünün tüm kanallardaki stok dağılımını döndürür"""
+    yayilim = {}
+    for firma in FIRMA_LISTESI:
+        if urun_sku in firma_data.get(firma, {}):
+            yayilim[firma] = firma_data[firma][urun_sku]["stok_miktari"]
+        else:
+            yayilim[firma] = 0
+    return yayilim
+
+
+def yoldaki_durum_hesapla(sku, bizim_stok, toplam_haftalik_satis, yoldaki_data):
+    """
+    Yoldaki ürün durumunu hesaplar.
+    🟢 Yeşil: Yoldaki miktar stoğu zamanında karşılar
+    🟡 Sarı: Varış gecikmeli / stok o tarihe kadar zor dayanır
+    🔴 Kırmızı: Yolda ürün yok ve stok bitmek üzere
+    """
+    yol = yoldaki_data.get(sku)
+    gunluk_satis = (toplam_haftalik_satis / 7) if toplam_haftalik_satis else 0
+
+    if not yol or (yol.get("yoldaki_miktar", 0) or 0) == 0:
+        # Yolda ürün yok
+        if gunluk_satis > 0:
+            kalan_gun = bizim_stok / gunluk_satis
+            if kalan_gun <= 14:
+                return "kirmizi", "Yolda ürün yok, stok bitmek üzere!", 0, ""
+        return "yok", "", 0, ""
+
+    yoldaki_miktar = yol.get("yoldaki_miktar", 0) or 0
+    varis_tarihi_str = yol.get("tahmini_varis_tarihi", "") or ""
+
+    if not varis_tarihi_str or varis_tarihi_str == "nan":
+        return "sari", "Varış tarihi belirsiz", yoldaki_miktar, ""
+
+    try:
+        varis = datetime.strptime(varis_tarihi_str[:10], "%Y-%m-%d").date()
+        gun_kaldi = (varis - date.today()).days
+
+        if gunluk_satis > 0:
+            stokun_bitmesi = bizim_stok / gunluk_satis  # kaç günde biter
+            if gun_kaldi <= stokun_bitmesi:
+                return "yesil", f"Varış: {varis_tarihi_str[:10]} ({gun_kaldi}g kaldı)", yoldaki_miktar, varis_tarihi_str[:10]
+            else:
+                return "sari", f"Gecikme riski! Stok {int(stokun_bitmesi)}g'de biter, varış {gun_kaldi}g sonra", yoldaki_miktar, varis_tarihi_str[:10]
+        else:
+            return "yesil", f"Varış: {varis_tarihi_str[:10]} ({gun_kaldi}g kaldı)", yoldaki_miktar, varis_tarihi_str[:10]
+    except:
+        return "sari", f"Varış: {varis_tarihi_str}", yoldaki_miktar, varis_tarihi_str
+
+
+URETIM_SURESI_GUN = 135  # 4.5 ay sabit
+
+def trend_hesapla(gecmis_satislar):
+    """
+    Son 4 haftanın satış trendini hesaplar.
+    gecmis_satislar: [{"tarih":..., "satis":...}, ...] en yeni önce
+
+    Döndürür:
+      trend_yon: "yukseliyor" | "dusuyor" | "stabil" | "yetersiz_veri"
+      trend_yuzdesi: float (+ artış, - düşüş)
+      ortalama_satis: float (4 hafta ortalaması)
+      trend_mesaji: str
+    """
+    if not gecmis_satislar or len(gecmis_satislar) < 2:
+        ort = gecmis_satislar[0]["satis"] if gecmis_satislar else 0
+        return "yetersiz_veri", 0.0, ort, "⚪ Yeterli geçmiş veri yok"
+
+    satislar = [h["satis"] for h in gecmis_satislar]
+    ortalama = sum(satislar) / len(satislar)
+
+    # İlk yarı vs ikinci yarı karşılaştırması
+    n = len(satislar)
+    yeni = sum(satislar[:n//2]) / (n//2)       # Yeni haftalar
+    eski = sum(satislar[n//2:]) / (n - n//2)   # Eski haftalar
+
+    if eski == 0:
+        yuzde = 100.0 if yeni > 0 else 0.0
+    else:
+        yuzde = ((yeni - eski) / eski) * 100
+
+    if yuzde >= 15:
+        return "yukseliyor", yuzde, ortalama, f"📈 Yükseliyor (+%{yuzde:.0f})"
+    elif yuzde <= -15:
+        return "dusuyor", yuzde, ortalama, f"📉 Düşüyor (-%{abs(yuzde):.0f})"
+    else:
+        return "stabil", yuzde, ortalama, f"➡️ Stabil (%{yuzde:+.0f})"
+
+
+def siparis_miktari_oneri(bizim_stok, ortalama_haftalik_satis, trend_yon, trend_yuzdesi, yoldaki_miktar=0):
+    """
+    Sipariş verilmesi gereken miktarı hesaplar.
+
+    Mantık:
+    - Hedef: 135 gün (4.5 ay) + güvenlik tamponu (30 gün) = 165 günlük stok
+    - Mevcut stok + yoldaki stok çıkarılır
+    - Trend düşüyorsa miktar azaltılır, yüksekse artırılır
+    - Sonuç 0'ın altına düşemez
+    """
+    if not ortalama_haftalik_satis or ortalama_haftalik_satis == 0:
+        return 0, "Satış verisi yok, öneri yapılamıyor"
+
+    hedef_gun = 165  # 135 gün üretim + 30 gün tampon
+    gunluk_satis = ortalama_haftalik_satis / 7
+    hedef_stok = hedef_gun * gunluk_satis
+
+    # Trend düzeltmesi
+    if trend_yon == "yukseliyor":
+        hedef_stok *= (1 + min(trend_yuzdesi / 100, 0.3))  # max %30 artır
+        trend_notu = "📈 Trend yükseldiği için miktar artırıldı"
+    elif trend_yon == "dusuyor":
+        hedef_stok *= (1 + max(trend_yuzdesi / 100, -0.3))  # max %30 azalt
+        trend_notu = "📉 Trend düştüğü için miktar azaltıldı"
+    else:
+        trend_notu = "➡️ Stabil trend"
+
+    mevcut_toplam = bizim_stok + (yoldaki_miktar or 0)
+    oneri = max(0, int(hedef_stok - mevcut_toplam))
+
+    if oneri == 0:
+        return 0, "✅ Yeterli stok var, sipariş gerekmiyor"
+
+    return oneri, f"{trend_notu} → {oneri} adet sipariş önerilir"
+
+
+def risk_skoru_hesapla(bizim_stok, ortalama_haftalik_satis, stok_gun, siparis_son_gun, trend_yon):
+    """
+    0-100 arası risk skoru hesaplar. 100 = çok riskli, 0 = güvenli.
+    """
+    skor = 0
+
+    # Sipariş aciliyeti (max 50 puan)
+    if siparis_son_gun is not None:
+        if siparis_son_gun <= 0:
+            skor += 50
+        elif siparis_son_gun <= 14:
+            skor += 40
+        elif siparis_son_gun <= 30:
+            skor += 30
+        elif siparis_son_gun <= 60:
+            skor += 15
+
+    # Stok yaşı (max 30 puan)
+    if stok_gun >= 90:
+        skor += 30
+    elif stok_gun >= 60:
+        skor += 20
+    elif stok_gun >= 30:
+        skor += 10
+
+    # Trend (max 20 puan)
+    if trend_yon == "dusuyor":
+        skor += 10
+    elif trend_yon == "yukseliyor":
+        skor -= 5  # Yükselen trend riski azaltır
+
+    skor = max(0, min(100, skor))
+
+    if skor >= 70:
+        return skor, "🔴 Çok Yüksek Risk"
+    elif skor >= 45:
+        return skor, "🟠 Yüksek Risk"
+    elif skor >= 25:
+        return skor, "🟡 Orta Risk"
+    else:
+        return skor, "🟢 Düşük Risk"
+
+
+def kar_marji_hesapla(satis_fiyati, alis_fiyati, toplam_maliyet=None):
+    """
+    Kar marjını ve durumunu hesaplar.
+    toplam_maliyet varsa (alış + ek maliyetler) onu kullanır, yoksa alış fiyatını.
+    Döndürür: marj_yuzdesi, kar_tl, durum, renk
+    """
+    if not satis_fiyati or satis_fiyati == 0:
+        return None, None, "fiyat_yok", "yok"
+
+    maliyet = toplam_maliyet if toplam_maliyet and toplam_maliyet > 0 else alis_fiyati
+    if not maliyet or maliyet == 0:
+        return None, None, "alis_yok", "yok"
+
+    kar_tl = satis_fiyati - maliyet
+    marj = (kar_tl / satis_fiyati) * 100
+
+    if marj >= 35:
+        return marj, kar_tl, "yuksek", "yesil"
+    elif marj >= 20:
+        return marj, kar_tl, "normal", "sari"
+    elif marj >= 0:
+        return marj, kar_tl, "dusuk", "turuncu"
+    else:
+        return marj, kar_tl, "zarar", "kirmizi"
+
+
+def kar_marji_analizi():
+    """Tüm ürünler için kar marjı analizi — satın alma geçmişinden gerçek maliyet kullanır"""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT * FROM urunler ORDER BY urun_adi")
+    urunler = [dict(r) for r in c.fetchall()]
+    conn.close()
+
+    sonuclar = []
+    for u in urunler:
+        satis = u.get("satis_fiyati") or u.get("fiyat") or 0
+        alis = u.get("alis_fiyati") or 0
+        hedef = u.get("hedef_kar_marji") or 0
+
+        # Satın alma geçmişinden ortalama maliyet
+        sa_ozet = get_satin_alma_ozet(u["sku"])
+        gercek_maliyet = None
+        siparis_sayisi = 0
+        toplam_adet = 0
+        son_satin_alma = "—"
+        if sa_ozet and sa_ozet.get("ort_maliyet") and sa_ozet["ort_maliyet"] > 0:
+            gercek_maliyet = sa_ozet["ort_maliyet"]
+            siparis_sayisi = sa_ozet.get("siparis_sayisi", 0) or 0
+            toplam_adet = sa_ozet.get("toplam_adet", 0) or 0
+            son_satin_alma = sa_ozet.get("son_satin_alma") or "—"
+
+        kullanilas_maliyet = gercek_maliyet or alis or 0
+        marj, kar_tl, durum, renk = kar_marji_hesapla(satis, alis, gercek_maliyet)
+
+        hedef_durum = "yok"
+        if marj is not None and hedef > 0:
+            fark = marj - hedef
+            hedef_durum = "hedef_ustu" if fark >= 0 else ("hedefe_yakin" if fark >= -5 else "hedefin_altinda")
+
+        bizim_stok = u.get("bizim_stok", 0) or 0
+        stok_degeri_satis = bizim_stok * satis
+        stok_degeri_maliyet = bizim_stok * kullanilas_maliyet
+        potansiyel_kar = stok_degeri_satis - stok_degeri_maliyet
+
+        sonuclar.append({
+            "sku": u["sku"],
+            "urun_adi": u["urun_adi"],
+            "kategori": u.get("kategori", ""),
+            "marka": u.get("marka", ""),
+            "satis_fiyati": satis,
+            "alis_fiyati": alis,
+            "gercek_maliyet": gercek_maliyet,
+            "kullanilas_maliyet": kullanilas_maliyet,
+            "hedef_kar_marji": hedef,
+            "kar_marji": marj,
+            "kar_tl": kar_tl,
+            "kar_marji_durum": durum,
+            "kar_marji_renk": renk,
+            "hedef_durum": hedef_durum,
+            "bizim_stok": bizim_stok,
+            "stok_degeri_satis": stok_degeri_satis,
+            "stok_degeri_maliyet": stok_degeri_maliyet,
+            "potansiyel_kar": potansiyel_kar,
+            "siparis_sayisi": siparis_sayisi,
+            "toplam_alinan_adet": toplam_adet,
+            "son_satin_alma": son_satin_alma,
+        })
+
+    return sonuclar
+
+
+def olu_stok_tespiti(sku, bizim_stok, gecmis_satislar, stok_gun):
+    """
+    Ölü stok tespiti yapar.
+
+    Kriterler:
+    - Bizim stok > 0 (elimizde ürün var)
+    - Son 4 haftada toplam satış çok düşük (haftalık ort < 1) VEYA hiç satış yok
+    - Stok yaşı 60 günden fazla
+
+    Döndürür:
+      durum: "olu" | "yavas" | "normal" | "veri_yok"
+      mesaj: str
+    """
+    if bizim_stok == 0:
+        return "normal", ""
+
+    if not gecmis_satislar:
+        if stok_gun >= 60:
+            return "veri_yok", "⚠️ Satış verisi yok, stok yaşlı"
+        return "veri_yok", ""
+
+    satislar = [h["satis"] for h in gecmis_satislar]
+    toplam = sum(satislar)
+    ortalama = toplam / len(satislar) if satislar else 0
+
+    if ortalama == 0 and stok_gun >= 60:
+        return "olu", f"🪦 ÖLÜSTOK: {len(satislar)} haftadır satış yok, {stok_gun} günlük stok"
+    elif ortalama < 1 and stok_gun >= 45:
+        return "yavas", f"🐢 YAVAŞ: Hft. ort. {ortalama:.1f} adet, {stok_gun} günlük stok"
+    else:
+        return "normal", ""
+
+
+def genel_analiz_hesapla():
+    """
+    Kategori ve marka bazında özet analiz döndürür.
+    Dashboard verisi üzerinden çalışır.
+    """
+    veri = dashboard_hesapla()
+
+    # Ürün başına tek satır (firma tekrarını kaldır)
+    sku_goruldu = set()
+    urunler = []
+    for u in veri:
+        if u["sku"] not in sku_goruldu:
+            sku_goruldu.add(u["sku"])
+            urunler.append(u)
+
+    # Kategori bazında özet
+    kategori_ozet = {}
+    for u in urunler:
+        kat = u.get("kategori", "Diğer") or "Diğer"
+        if kat not in kategori_ozet:
+            kategori_ozet[kat] = {
+                "urun_sayisi": 0,
+                "toplam_stok": 0,
+                "toplam_satis": 0,
+                "acil_sayisi": 0,
+                "olu_sayisi": 0,
+                "risk_toplam": 0,
+            }
+        k = kategori_ozet[kat]
+        k["urun_sayisi"] += 1
+        k["toplam_stok"] += u.get("bizim_stok", 0)
+        k["toplam_satis"] += u.get("ortalama_haftalik_satis", 0)
+        if u.get("siparis_durum") == "acil":
+            k["acil_sayisi"] += 1
+        if u.get("olu_stok_durum") in ("olu", "yavas"):
+            k["olu_sayisi"] += 1
+        k["risk_toplam"] += u.get("risk_skor", 0)
+
+    for kat in kategori_ozet:
+        n = kategori_ozet[kat]["urun_sayisi"]
+        kategori_ozet[kat]["ort_risk"] = round(kategori_ozet[kat]["risk_toplam"] / n, 1) if n else 0
+
+    # Marka bazında özet
+    marka_ozet = {}
+    for u in urunler:
+        marka = u.get("marka", "Diğer") or "Diğer"
+        if marka not in marka_ozet:
+            marka_ozet[marka] = {"urun_sayisi": 0, "toplam_satis": 0, "acil_sayisi": 0}
+        marka_ozet[marka]["urun_sayisi"] += 1
+        marka_ozet[marka]["toplam_satis"] += u.get("ortalama_haftalik_satis", 0)
+        if u.get("siparis_durum") == "acil":
+            marka_ozet[marka]["acil_sayisi"] += 1
+
+    # Öncelikli sipariş listesi
+    siparis_listesi = sorted(
+        [u for u in urunler if u.get("oneri_miktar", 0) > 0],
+        key=lambda x: (
+            {"acil": 0, "yaklasıyor": 1, "planlama": 2, "normal": 3}.get(x.get("siparis_durum", "normal"), 3),
+            -x.get("risk_skor", 0)
+        )
+    )
+
+    return {
+        "urunler": urunler,
+        "kategori_ozet": kategori_ozet,
+        "marka_ozet": marka_ozet,
+        "siparis_listesi": siparis_listesi,
+    }
+
+
+def siparis_takvimi_hesapla(bizim_stok, toplam_haftalik_satis):
+    """
+    Bizim stok + toplam satış hızına göre ne zaman sipariş verilmesi gerektiğini hesaplar.
+    Üretim süresi: 135 gün (4.5 ay)
+
+    Mantık:
+      - Mevcut stok kaç günde biter? → stok_bitis_gun
+      - Sipariş vermek için son gün = stok_bitis_gun - 135
+      - Eğer bu değer <= 0 ise → ACİL SİPARİŞ VER
+      - Eğer bu değer > 0 ise → X gün içinde sipariş ver
+
+    Durum etiketleri:
+      🔴 ACİL  : sipariş son günü geçmiş veya bugün
+      🟠 YAKLAŞIYOR : 0-30 gün içinde sipariş verilmeli
+      🟡 PLANLAMA   : 30-60 gün içinde
+      🟢 NORMAL     : 60+ gün sonra
+      ⚪ VERİ YOK   : satış verisi yok
+    """
+    if not toplam_haftalik_satis or toplam_haftalik_satis == 0:
+        return None, None, "veri_yok", "⚪ Satış verisi yok"
+
+    gunluk_satis = toplam_haftalik_satis / 7
+    stok_bitis_gun = int(bizim_stok / gunluk_satis) if gunluk_satis > 0 else 0
+    siparis_son_gun = stok_bitis_gun - URETIM_SURESI_GUN
+
+    if siparis_son_gun <= 0:
+        return stok_bitis_gun, siparis_son_gun, "acil", f"🔴 ACİL SİPARİŞ VER! (Stok {stok_bitis_gun}g'de biter)"
+    elif siparis_son_gun <= 30:
+        return stok_bitis_gun, siparis_son_gun, "yaklasıyor", f"🟠 {siparis_son_gun} gün içinde sipariş ver"
+    elif siparis_son_gun <= 60:
+        return stok_bitis_gun, siparis_son_gun, "planlama", f"🟡 {siparis_son_gun} gün içinde sipariş ver"
+    else:
+        return stok_bitis_gun, siparis_son_gun, "normal", f"🟢 {siparis_son_gun} gün sonra sipariş ver"
+
+
+def siparis_uyarisi_kontrol(sku, firma, firma_data, bizim_stok):
+    """
+    Firma stoğu azaldıysa ve bizde stok varsa uyarı döndürür.
+    'Azaldı' = stok < haftalık satışın 2 katı veya stok 0
+    """
+    firma_urun = firma_data.get(firma, {}).get(sku)
+    if not firma_urun:
+        return False
+    
+    firma_stok = firma_urun.get("stok_miktari", 0)
+    haftalik_satis = firma_urun.get("haftalik_satis", 0)
+    
+    if bizim_stok <= 0:
+        return False
+    
+    # Firma stoğu 0 veya haftalık satışın 2 katından az ise uyarı
+    esik = (haftalik_satis * 2) if haftalik_satis > 0 else 5
+    return firma_stok <= esik
+
+def muadil_bul(sku):
+    """Ürün bittiğinde muadil önerir"""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT * FROM urunler WHERE sku=?", (sku,))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return []
+    row = dict(row)
+    return get_muadil_oneriler(sku, row.get("kategori", ""), row.get("marka", ""), row.get("fiyat", 0))
+
+def dashboard_hesapla():
+    """Tüm dashboard verilerini hesaplar ve döndürür"""
+    urunler, firma_data, stok_yaslar = get_all_dashboard_data()
+    yoldaki_data = get_yoldaki_urunler()
+    gecmis_satislar = get_tum_gecmis_satislar(hafta_sayisi=4)
+
+    dashboard_satirlar = []
+
+    for urun in urunler:
+        sku = urun["sku"]
+        urun_adi = urun["urun_adi"]
+        bizim_stok = urun.get("bizim_stok", 0) or 0
+        trendyol_stok = urun.get("trendyol_stok", 0) or 0
+        kategori = urun.get("kategori", "")
+
+        # Stok yaşı
+        ilk_tarih = stok_yaslar.get(sku) or urun.get("ilk_giris_tarihi", "")
+        stok_gun, stok_renk = stok_yasi_hesapla(ilk_tarih)
+
+        # Firma bazlı veriler
+        firma_satirlari = []
+        satis_karsilastirma = []
+
+        for firma in FIRMA_LISTESI:
+            firma_urun = firma_data.get(firma, {}).get(sku)
+            if firma_urun:
+                f_stok = firma_urun.get("stok_miktari", 0) or 0
+                f_satis = firma_urun.get("haftalik_satis", 0) or 0
+            else:
+                f_stok = 0
+                f_satis = 0
+
+            gun_sayisi, gun_renk = kac_gunluk_satis(bizim_stok, f_satis)
+            uyari = siparis_uyarisi_kontrol(sku, firma, firma_data, bizim_stok)
+            muadil_gerekli = (f_stok == 0 and bizim_stok == 0)
+            satis_karsilastirma.append((firma, f_satis))
+
+            firma_satirlari.append({
+                "firma": firma,
+                "stok": f_stok,
+                "satis": f_satis,
+                "gun_sayisi": gun_sayisi,
+                "gun_renk": gun_renk,
+                "siparis_uyarisi": uyari,
+                "muadil_gerekli": muadil_gerekli,
+            })
+
+        # Satış performansı
+        performans_map = satis_performansi(satis_karsilastirma)
+        for fs in firma_satirlari:
+            fs["performans"] = performans_map.get(fs["firma"], "veri yok")
+
+        # Stok yayılımı
+        yayilim = stok_yayilimi(sku, firma_data)
+        yayilim["TRENDYOL"] = trendyol_stok
+
+        # Toplam haftalık satış
+        toplam_satis = sum(fd["satis"] for fd in firma_satirlari)
+
+        # Trend hesaplama (geçmiş 4 hafta)
+        gecmis = gecmis_satislar.get(sku, [])
+        trend_yon, trend_yuzdesi, ortalama_satis, trend_mesaji = trend_hesapla(gecmis)
+
+        # Yoldaki miktar
+        yol = yoldaki_data.get(sku, {})
+        yoldaki_miktar = yol.get("yoldaki_miktar", 0) or 0
+
+        # Sipariş takvimi
+        stok_bitis_gun, siparis_son_gun, siparis_durum, siparis_mesaj = siparis_takvimi_hesapla(
+            bizim_stok, ortalama_satis if ortalama_satis > 0 else toplam_satis
+        )
+
+        # Sipariş miktarı önerisi
+        oneri_miktar, oneri_mesaj = siparis_miktari_oneri(
+            bizim_stok, ortalama_satis if ortalama_satis > 0 else toplam_satis,
+            trend_yon, trend_yuzdesi, yoldaki_miktar
+        )
+
+        # Risk skoru
+        risk_skor, risk_etiketi = risk_skoru_hesapla(
+            bizim_stok, ortalama_satis if ortalama_satis > 0 else toplam_satis,
+            stok_gun, siparis_son_gun, trend_yon
+        )
+
+        # Kar marjı
+        satis_f = urun.get("satis_fiyati") or urun.get("fiyat") or 0
+        alis_f = urun.get("alis_fiyati") or 0
+        kar_marji, kar_tl, kar_durum, kar_renk = kar_marji_hesapla(satis_f, alis_f)
+
+        # Ölü stok tespiti
+        olu_durum, olu_mesaj = olu_stok_tespiti(sku, bizim_stok, gecmis, stok_gun)
+
+        # Yoldaki durum
+        yol_renk, yol_mesaj, yol_miktar, yol_varis = yoldaki_durum_hesapla(
+            sku, bizim_stok, ortalama_satis if ortalama_satis > 0 else toplam_satis, yoldaki_data
+        )
+
+        dashboard_satirlar.append({
+            "sku": sku,
+            "urun_adi": urun_adi,
+            "kategori": kategori,
+            "marka": urun.get("marka", ""),
+            "bizim_stok": bizim_stok,
+            "trendyol_stok": trendyol_stok,
+            "stok_gun": stok_gun,
+            "stok_renk": stok_renk,
+            "ilk_giris": ilk_tarih,
+            "yayilim": yayilim,
+            "firma_detay": firma_satirlari,
+            "toplam_haftalik_satis": toplam_satis,
+            "ortalama_haftalik_satis": round(ortalama_satis, 1),
+            "gecmis_satislar": gecmis,
+            "trend_yon": trend_yon,
+            "trend_yuzdesi": round(trend_yuzdesi, 1),
+            "trend_mesaji": trend_mesaji,
+            "stok_bitis_gun": stok_bitis_gun,
+            "siparis_son_gun": siparis_son_gun,
+            "siparis_durum": siparis_durum,
+            "siparis_mesaj": siparis_mesaj,
+            "oneri_miktar": oneri_miktar,
+            "oneri_mesaj": oneri_mesaj,
+            "risk_skor": risk_skor,
+            "risk_etiketi": risk_etiketi,
+            "olu_stok_durum": olu_durum,
+            "olu_stok_mesaj": olu_mesaj,
+            "kar_marji": kar_marji,
+            "kar_durum": kar_durum,
+            "kar_renk": kar_renk,
+            "yol_renk": yol_renk,
+            "yol_mesaj": yol_mesaj,
+            "yol_miktar": yol_miktar,
+            "yol_varis": yol_varis,
+        })
+
+    return dashboard_satirlar
