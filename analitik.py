@@ -527,7 +527,7 @@ def dashboard_hesapla():
 
             gun_sayisi, gun_renk = kac_gunluk_satis(bizim_stok, f_satis)
             uyari = siparis_uyarisi_kontrol(sku, firma, firma_data, bizim_stok)
-            muadil_gerekli = (f_stok == 0 and bizim_stok == 0)
+            muadil_gerekli = False
             satis_karsilastirma.append((firma, f_satis))
 
             firma_satirlari.append({

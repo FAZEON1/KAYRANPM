@@ -13,7 +13,7 @@ from database import (initialize_db, onayla_siparis, reddet_siparis,
                       get_gecmis_satis_firma_bazli, get_urun_detay,
                       ekle_satin_alma, guncelle_satin_alma, sil_satin_alma,
                       get_satin_alma_gecmisi, get_tum_tedarikciler)
-from analitik import dashboard_hesapla, muadil_bul, genel_analiz_hesapla, kar_marji_analizi
+from analitik import dashboard_hesapla, genel_analiz_hesapla, kar_marji_analizi
 from excel_islemler import (excel_yukle_ana_stok, excel_yukle_firma_stoklari,
                             excel_yukle_yoldaki_urunler, create_sample_excel_bytes)
 from bildirim import (get_bildirim_ayarlari, kaydet_bildirim_ayarlari, email_gonder)
@@ -251,13 +251,12 @@ if sayfa == "📊  Dashboard":
     toplam_sku = len(set(u["sku"] for u in veri))
     uyari_sayisi = sum(1 for u, fd in gosterilecek if fd["siparis_uyarisi"])
     kritik_sayisi = sum(1 for u in veri if u["stok_renk"] == "kirmizi")
-    muadil_sayisi = sum(1 for u, fd in gosterilecek if fd["muadil_gerekli"])
+    muadil_sayisi = 0
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("📦 Toplam Ürün", toplam_sku)
     m2.metric("⚠️ Sipariş Gerekli", uyari_sayisi, delta="Acil" if uyari_sayisi > 0 else None, delta_color="inverse")
     m3.metric("🔴 Kritik Stok (90g+)", kritik_sayisi, delta="Dikkat" if kritik_sayisi > 0 else None, delta_color="inverse")
-    m4.metric("🔄 Muadil Gerekli", muadil_sayisi)
 
     # ACİL SİPARİŞ BANNER
     acil_urunler = [u for u in veri if u.get("siparis_durum") == "acil"]
@@ -315,7 +314,7 @@ if sayfa == "📊  Dashboard":
             yol_mesaj = urun.get("yol_mesaj", "")
             yol_miktar = urun.get("yol_miktar", 0)
             yol_metin = f"{YOL_ETIKET.get(yol_renk,'—')} {yol_miktar} adet | {yol_mesaj}" if yol_renk != "yok" else "—"
-            uyari = "⚠️ SİPARİŞ ÖNER!" if fd["siparis_uyarisi"] else ("🔄 MUADİL" if fd["muadil_gerekli"] else "")
+            uyari = "⚠️ SİPARİŞ ÖNER!" if fd["siparis_uyarisi"] else ""
             olu_durum = urun.get("olu_stok_durum", "normal")
             olu_mesaj = urun.get("olu_stok_mesaj", "")
             satirlar.append({
@@ -385,7 +384,6 @@ if sayfa == "📊  Dashboard":
                     if r: styles[cols.index("Yoldaki Durum")] = f"background-color:{r}"
                 if "Uyarı" in cols and row.get("Uyarı",""):
                     if "SİPARİŞ" in str(row.get("Uyarı","")): styles[cols.index("Uyarı")] = "background-color:#FFCCCC; font-weight:bold"
-                    elif "MUADİL" in str(row.get("Uyarı","")): styles[cols.index("Uyarı")] = "background-color:#F3E5F5"
                 return styles
 
             goster = ["SKU","Ürün Adı","Kategori","Bizim Stok","Ort. Hft. Satış","Satış Trendi",
@@ -427,13 +425,7 @@ if sayfa == "📊  Dashboard":
                                 st.success("Sipariş önerisi oluşturuldu!")
                                 st.rerun()
 
-                if fd["muadil_gerekli"]:
-                    muadiller = muadil_bul(urun["sku"])
-                    if muadiller:
-                        isimler = ", ".join(m["urun_adi"] for m in muadiller[:3])
-                        st.markdown(f'<div class="muadil-box">🔄 <b>{urun["urun_adi"]}</b> — {fd["firma"]} ve depomuzda stok yok. Muadil öneri: <b>{isimler}</b></div>', unsafe_allow_html=True)
-                    else:
-                        st.markdown(f'<div class="muadil-box">🔄 <b>{urun["urun_adi"]}</b> — Stok yok, muadil bulunamadı.</div>', unsafe_allow_html=True)
+
 
 # ════════════════════════════════════════════════════════════════════
 # 2) ÜRÜN DETAY
@@ -645,21 +637,7 @@ elif sayfa == "🔍  Ürün Detay":
     else:
         st.info("Yolda ürün kaydı bulunmuyor.")
 
-    # Muadil öneriler
-    st.markdown("---")
-    st.subheader("🔄 Muadil Ürün Önerileri")
-    muadiller = muadil_bul(secilen_sku)
-    if muadiller:
-        df_m = pd.DataFrame([{
-            "SKU": m["sku"],
-            "Ürün Adı": m["urun_adi"],
-            "Marka": m.get("marka",""),
-            "Kategori": m.get("kategori",""),
-            "Bizim Stok": m.get("bizim_stok",0),
-        } for m in muadiller])
-        st.dataframe(df_m, use_container_width=True, hide_index=True)
-    else:
-        st.info("Aynı kategoride stokta muadil ürün bulunamadı.")
+
 
 # ════════════════════════════════════════════════════════════════════
 # 3) GENEL ANALİZ
@@ -784,7 +762,7 @@ elif sayfa == "📈  Genel Analiz":
 
             st.markdown("""
             <div class="uyari-box">
-            💡 <b>Öneri:</b> Ölü stok ürünler için indirim kampanyası, paket satış veya muadil ürünle birlikte promosyon değerlendirilebilir.
+            💡 <b>Öneri:</b> Ölü stok ürünler için indirim kampanyası veya paket satış değerlendirilebilir.
             </div>
             """, unsafe_allow_html=True)
 
@@ -1275,17 +1253,13 @@ elif sayfa == "📂  Veri Yükleme":
 
             sonuclar = []
 
-            # G5F STOK (ana stok)
+            # G5F STOK (ana stok + yoldaki)
             basari, mesaj = excel_yukle_ana_stok(tmp_path)
             sonuclar.append(("G5F STOK", basari, mesaj))
 
             # Firma stokları
             basari2, mesaj2 = excel_yukle_firma_stoklari(tmp_path)
             sonuclar.append(("Firma Stokları", basari2, mesaj2))
-
-            # Yoldaki ürünler
-            basari3, mesaj3 = excel_yukle_yoldaki_urunler(tmp_path)
-            sonuclar.append(("Yoldaki Ürünler", basari3, mesaj3))
 
             os.unlink(tmp_path)
 
@@ -1300,9 +1274,8 @@ elif sayfa == "📂  Veri Yükleme":
     **📋 Excel Sekme Yapısı:**
     | Sekme | İçerik | Kolonlar |
     |-------|--------|----------|
-    | G5F STOK | Bizim depo stoğumuz | SKU, Ürün Adı, Kategori, Marka, Fiyat, Özellikler, Bizim Stok, Trendyol Stok |
+    | G5F STOK | Bizim depo stoğumuz + yoldaki ürünler | SKU, Ürün Adı, Kategori, Marka, Satış Fiyatı, Alış Fiyatı, Hedef Kar Marjı, Özellikler, Bizim Stok, Trendyol Stok, **Yoldaki Miktar**, **Tahmini Varış Tarihi** |
     | ITOPYA / HB / VATAN / MONDAY / KANAL / DIGER | Firma stokları | SKU, Ürün Adı, Stok Miktarı, Haftalık Satış |
-    | YOLDAKI | Yoldaki ürünler | SKU, Ürün Adı, Yoldaki Miktar, Tahmini Varış Tarihi |
     """)
 
 
