@@ -427,7 +427,109 @@ def genel_analiz_hesapla():
     }
 
 
-def siparis_takvimi_hesapla(bizim_stok, toplam_haftalik_satis):
+def tum_urunler_listesi():
+    """
+    Tüm ürünlerin FOB, COST, COST PRICE ve FINAL COST PRICE (paçal) hesabını döndürür.
+    
+    FOB Price   = alış fiyatı (birim)
+    COST        = FOB × maliyet_yuzdesi/100  (masraf tutarı)
+    COST PRICE  = FOB + COST = FOB × (1 + maliyet_yuzdesi/100)
+    FINAL COST PRICE (paçal) = Σ(adet × COST PRICE) / Σadet  (ağırlıklı ort.)
+    """
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT * FROM urunler ORDER BY urun_adi")
+    urunler = [dict(r) for r in c.fetchall()]
+    conn.close()
+
+    sonuclar = []
+    for u in urunler:
+        sku = u["sku"]
+        satis_fiyati = u.get("satis_fiyati") or u.get("fiyat") or 0
+        hedef_marj = u.get("hedef_kar_marji") or 0
+        bizim_stok = u.get("bizim_stok") or 0
+
+        # Satın alma geçmişini çek
+        sa_ozet = get_satin_alma_ozet(sku)
+        kayitlar = []
+        conn2 = get_connection()
+        c2 = conn2.cursor()
+        c2.execute("SELECT * FROM satin_alma_gecmisi WHERE sku=? ORDER BY satin_alma_tarihi DESC", (sku,))
+        kayitlar = [dict(r) for r in c2.fetchall()]
+        conn2.close()
+
+        # FINAL COST PRICE (paçal) — ağırlıklı ortalama COST PRICE
+        toplam_maliyet_x_adet = 0
+        toplam_adet = 0
+        for k in kayitlar:
+            fob = k.get("alis_fiyati") or 0
+            mal_yuzde = k.get("maliyet_yuzdesi") or 0
+            adet = k.get("adet") or 0
+            cost_price = fob * (1 + mal_yuzde / 100)
+            toplam_maliyet_x_adet += cost_price * adet
+            toplam_adet += adet
+
+        final_cost_price = (toplam_maliyet_x_adet / toplam_adet) if toplam_adet > 0 else 0
+
+        # Son alış FOB ve COST bilgileri
+        son_fob = kayitlar[0].get("alis_fiyati") or 0 if kayitlar else 0
+        son_mal_yuzde = kayitlar[0].get("maliyet_yuzdesi") or 0 if kayitlar else 0
+        son_cost = son_fob * (son_mal_yuzde / 100)
+        son_cost_price = son_fob + son_cost
+
+        # Stok değeri
+        stok_degeri_fcp = bizim_stok * final_cost_price
+        stok_degeri_satis = bizim_stok * satis_fiyati
+
+        # Kar marjı (satış - paçal maliyet)
+        if satis_fiyati > 0 and final_cost_price > 0:
+            kar_usd = satis_fiyati - final_cost_price
+            kar_yuzde = (kar_usd / satis_fiyati) * 100
+        else:
+            kar_usd = None
+            kar_yuzde = None
+
+        sonuclar.append({
+            "sku": sku,
+            "urun_adi": u["urun_adi"],
+            "kategori": u.get("kategori") or "",
+            "marka": u.get("marka") or "",
+            "bizim_stok": bizim_stok,
+            "satis_fiyati": satis_fiyati,
+            "hedef_marj": hedef_marj,
+            "final_cost_price": final_cost_price,
+            "son_fob": son_fob,
+            "son_cost": son_cost,
+            "son_cost_price": son_cost_price,
+            "son_mal_yuzde": son_mal_yuzde,
+            "stok_degeri_fcp": stok_degeri_fcp,
+            "stok_degeri_satis": stok_degeri_satis,
+            "kar_usd": kar_usd,
+            "kar_yuzde": kar_yuzde,
+            "siparis_sayisi": len(kayitlar),
+            "toplam_alinan_adet": toplam_adet,
+            "kayitlar": kayitlar,
+        })
+
+    return sonuclar
+
+
+def siparis_onerisi_listesi():
+    """135 günden az stok kalan ürünleri otomatik listeler"""
+    veri = dashboard_hesapla()
+    sonuc = []
+    sku_goruldu = set()
+    for u in veri:
+        if u["sku"] in sku_goruldu:
+            continue
+        sku_goruldu.add(u["sku"])
+        if u.get("siparis_durum") in ("acil", "yaklasıyor", "planlama"):
+            sonuc.append(u)
+    sonuc.sort(key=lambda x: {"acil": 0, "yaklasıyor": 1, "planlama": 2}.get(x.get("siparis_durum",""), 3))
+    return sonuc
+
+
+
     """
     Bizim stok + toplam satış hızına göre ne zaman sipariş verilmesi gerektiğini hesaplar.
     Üretim süresi: 135 gün (4.5 ay)
@@ -452,6 +554,23 @@ def siparis_takvimi_hesapla(bizim_stok, toplam_haftalik_satis):
     stok_bitis_gun = int(bizim_stok / gunluk_satis) if gunluk_satis > 0 else 0
     siparis_son_gun = stok_bitis_gun - URETIM_SURESI_GUN
 
+    if siparis_son_gun <= 0:
+        return stok_bitis_gun, siparis_son_gun, "acil", f"🔴 ACİL SİPARİŞ VER! (Stok {stok_bitis_gun}g'de biter)"
+    elif siparis_son_gun <= 30:
+        return stok_bitis_gun, siparis_son_gun, "yaklasıyor", f"🟠 {siparis_son_gun} gün içinde sipariş ver"
+    elif siparis_son_gun <= 60:
+        return stok_bitis_gun, siparis_son_gun, "planlama", f"🟡 {siparis_son_gun} gün içinde sipariş ver"
+    else:
+        return stok_bitis_gun, siparis_son_gun, "normal", f"🟢 {siparis_son_gun} gün sonra sipariş ver"
+
+
+def siparis_takvimi_hesapla(bizim_stok, toplam_haftalik_satis):
+    """135 gün üretim süresi baz alınarak sipariş takvimi hesaplar."""
+    if not toplam_haftalik_satis or toplam_haftalik_satis == 0:
+        return None, None, "veri_yok", "⚪ Satış verisi yok"
+    gunluk_satis = toplam_haftalik_satis / 7
+    stok_bitis_gun = int(bizim_stok / gunluk_satis) if gunluk_satis > 0 else 0
+    siparis_son_gun = stok_bitis_gun - URETIM_SURESI_GUN
     if siparis_son_gun <= 0:
         return stok_bitis_gun, siparis_son_gun, "acil", f"🔴 ACİL SİPARİŞ VER! (Stok {stok_bitis_gun}g'de biter)"
     elif siparis_son_gun <= 30:
