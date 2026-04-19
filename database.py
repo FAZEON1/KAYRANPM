@@ -93,6 +93,35 @@ def initialize_db():
         except:
             pass
 
+    # Kampanya takip
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS kampanyalar (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kampanya_adi TEXT NOT NULL,
+            firma TEXT NOT NULL,
+            baslangic_tarihi TEXT,
+            bitis_tarihi TEXT,
+            durum TEXT DEFAULT 'aktif',
+            notlar TEXT,
+            olusturma_tarihi TEXT
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS kampanya_urunler (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kampanya_id INTEGER NOT NULL,
+            sku TEXT NOT NULL,
+            urun_adi TEXT,
+            pacal_maliyet REAL DEFAULT 0,
+            satis_fiyati REAL DEFAULT 0,
+            birim_firma_destek REAL DEFAULT 0,
+            birim_ek_destek REAL DEFAULT 0,
+            satilan_adet INTEGER DEFAULT 0,
+            notlar TEXT,
+            FOREIGN KEY (kampanya_id) REFERENCES kampanyalar(id)
+        )
+    """)
+
     # Stok yaşı takibi (ilk görüldüğü tarih)
     c.execute("""
         CREATE TABLE IF NOT EXISTS stok_yas (
@@ -483,3 +512,101 @@ def get_muadil_oneriler(sku, kategori, marka, fiyat):
     rows = [dict(r) for r in c.fetchall()]
     conn.close()
     return rows
+
+# ── Kampanya fonksiyonları ──────────────────────────────────────────
+
+def ekle_kampanya(kampanya_adi, firma, baslangic, bitis, notlar=""):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO kampanyalar (kampanya_adi, firma, baslangic_tarihi, bitis_tarihi, durum, notlar, olusturma_tarihi)
+        VALUES (?, ?, ?, ?, 'aktif', ?, ?)
+    """, (kampanya_adi, firma, baslangic, bitis, notlar, get_today()))
+    kampanya_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    return kampanya_id
+
+def get_kampanyalar(durum=None):
+    conn = get_connection()
+    c = conn.cursor()
+    if durum:
+        c.execute("SELECT * FROM kampanyalar WHERE durum=? ORDER BY olusturma_tarihi DESC", (durum,))
+    else:
+        c.execute("SELECT * FROM kampanyalar ORDER BY olusturma_tarihi DESC")
+    rows = [dict(r) for r in c.fetchall()]
+    conn.close()
+    return rows
+
+def get_kampanya(kampanya_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT * FROM kampanyalar WHERE id=?", (kampanya_id,))
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def guncelle_kampanya(kampanya_id, kampanya_adi, firma, baslangic, bitis, notlar):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        UPDATE kampanyalar SET kampanya_adi=?, firma=?, baslangic_tarihi=?, bitis_tarihi=?, notlar=?
+        WHERE id=?
+    """, (kampanya_adi, firma, baslangic, bitis, notlar, kampanya_id))
+    conn.commit()
+    conn.close()
+
+def kapat_kampanya(kampanya_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("UPDATE kampanyalar SET durum='kapali' WHERE id=?", (kampanya_id,))
+    conn.commit()
+    conn.close()
+
+def sil_kampanya(kampanya_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM kampanya_urunler WHERE kampanya_id=?", (kampanya_id,))
+    c.execute("DELETE FROM kampanyalar WHERE id=?", (kampanya_id,))
+    conn.commit()
+    conn.close()
+
+def ekle_kampanya_urun(kampanya_id, sku, urun_adi, pacal_maliyet, satis_fiyati,
+                       birim_firma_destek, birim_ek_destek, notlar=""):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO kampanya_urunler
+        (kampanya_id, sku, urun_adi, pacal_maliyet, satis_fiyati, birim_firma_destek, birim_ek_destek, satilan_adet, notlar)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
+    """, (kampanya_id, sku, urun_adi, pacal_maliyet, satis_fiyati,
+          birim_firma_destek, birim_ek_destek, notlar))
+    conn.commit()
+    conn.close()
+
+def get_kampanya_urunler(kampanya_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT * FROM kampanya_urunler WHERE kampanya_id=? ORDER BY id", (kampanya_id,))
+    rows = [dict(r) for r in c.fetchall()]
+    conn.close()
+    return rows
+
+def guncelle_kampanya_urun(urun_id, satis_fiyati, birim_firma_destek, birim_ek_destek, satilan_adet, notlar=""):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+        UPDATE kampanya_urunler SET
+            satis_fiyati=?, birim_firma_destek=?, birim_ek_destek=?,
+            satilan_adet=?, notlar=?
+        WHERE id=?
+    """, (satis_fiyati, birim_firma_destek, birim_ek_destek, satilan_adet, notlar, urun_id))
+    conn.commit()
+    conn.close()
+
+def sil_kampanya_urun(urun_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM kampanya_urunler WHERE id=?", (urun_id,))
+    conn.commit()
+    conn.close()
