@@ -1,6 +1,6 @@
 import pandas as pd
 from datetime import datetime
-from database import upsert_urun, upsert_firma_stok, get_connection, upsert_yoldaki_urun
+from database import upsert_urun, upsert_firma_stok, get_client, upsert_yoldaki_urun
 
 def normalize_sku(sku):
     """Fazeon/FAZEON gibi marka prefix'lerini SKU'dan temizler ve büyük harfe çevirir."""
@@ -158,16 +158,17 @@ def excel_yukle_firma_stoklari(dosya_yolu):
                         satis = 0
 
                     # Eğer SKU urunler tablosunda yoksa otomatik ekle
-                    from database import get_connection as _gc2
-                    _conn = _gc2(); _c = _conn.cursor()
-                    _c.execute("SELECT COUNT(*) as n FROM urunler WHERE sku=?", (sku,))
-                    if _c.fetchone()["n"] == 0:
-                        _c.execute("""
-                            INSERT INTO urunler (sku, urun_adi, kategori, marka, satis_fiyati, alis_fiyati, hedef_kar_marji, ozellikler, bizim_stok, trendyol_stok, guncelleme_tarihi)
-                            VALUES (?, ?, '', '', 0, 0, 0, '', 0, 0, date('now'))
-                        """, (sku, urun_adi or sku))
-                        _conn.commit()
-                    _conn.close()
+                    _sb = get_client()
+                    _mev = _sb.table("urunler").select("sku").eq("sku", sku).execute().data
+                    if not _mev:
+                        from datetime import date as _date
+                        _sb.table("urunler").insert({
+                            "sku": sku, "urun_adi": urun_adi or sku,
+                            "kategori": "", "marka": "", "satis_fiyati": 0,
+                            "alis_fiyati": 0, "hedef_kar_marji": 0, "ozellikler": "",
+                            "bizim_stok": 0, "trendyol_stok": 0,
+                            "guncelleme_tarihi": _date.today().isoformat(),
+                        }).execute()
 
                     upsert_firma_stok(firma, sku, urun_adi, stok, satis)
                     basarili += 1

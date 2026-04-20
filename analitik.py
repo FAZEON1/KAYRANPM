@@ -1,8 +1,8 @@
 from datetime import datetime, date
 from database import (get_all_dashboard_data, get_muadil_oneriler,
-                      ekle_siparis_onerisi, get_connection, get_yoldaki_urunler,
+                      ekle_siparis_onerisi, get_yoldaki_urunler,
                       get_tum_gecmis_satislar, get_gecmis_satis_firma_bazli,
-                      get_satin_alma_ozet)
+                      get_satin_alma_ozet, get_client)
 
 FIRMA_LISTESI = ["ITOPYA", "HB", "VATAN", "MONDAY", "KANAL", "DIGER"]
 
@@ -260,11 +260,8 @@ def kar_marji_hesapla(satis_fiyati, alis_fiyati, toplam_maliyet=None):
 
 def kar_marji_analizi():
     """Tüm ürünler için kar marjı analizi — satın alma geçmişinden gerçek maliyet kullanır"""
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT * FROM urunler ORDER BY urun_adi")
-    urunler = [dict(r) for r in c.fetchall()]
-    conn.close()
+    sb = get_client()
+    urunler = sb.table("urunler").select("*").order("urun_adi").execute().data or []
 
     sonuclar = []
     for u in urunler:
@@ -429,11 +426,8 @@ def genel_analiz_hesapla():
 
 def tum_urunler_listesi():
     """Tüm ürünlerin stok, fiyat ve FINAL COST PRICE hesabını döndürür."""
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT * FROM urunler ORDER BY urun_adi")
-    urunler = [dict(r) for r in c.fetchall()]
-    conn.close()
+    sb = get_client()
+    urunler = sb.table("urunler").select("*").order("urun_adi").execute().data or []
 
     FIRMALAR = ["ITOPYA", "HB", "VATAN", "MONDAY", "KANAL", "DIGER"]
 
@@ -445,22 +439,17 @@ def tum_urunler_listesi():
         bizim_stok = u.get("bizim_stok") or 0
 
         # Firma stoklarını çek
-        conn2 = get_connection()
-        c2 = conn2.cursor()
         firma_stoklari = {}
         for firma in FIRMALAR:
-            c2.execute("""
-                SELECT stok_miktari FROM firma_stok
-                WHERE sku=? AND firma=?
-                AND yukleme_tarihi=(SELECT MAX(yukleme_tarihi) FROM firma_stok WHERE sku=? AND firma=?)
-            """, (sku, firma, sku, firma))
-            row = c2.fetchone()
-            firma_stoklari[firma] = row["stok_miktari"] if row else 0
+            son_t = sb.table("firma_stok").select("yukleme_tarihi").eq("firma", firma).eq("sku", sku).order("yukleme_tarihi", desc=True).limit(1).execute().data
+            if son_t:
+                r = sb.table("firma_stok").select("stok_miktari").eq("firma", firma).eq("sku", sku).eq("yukleme_tarihi", son_t[0]["yukleme_tarihi"]).execute().data
+                firma_stoklari[firma] = r[0]["stok_miktari"] if r else 0
+            else:
+                firma_stoklari[firma] = 0
 
         # Satın alma geçmişini çek
-        c2.execute("SELECT * FROM satin_alma_gecmisi WHERE sku=? ORDER BY satin_alma_tarihi DESC", (sku,))
-        kayitlar = [dict(r) for r in c2.fetchall()]
-        conn2.close()
+        kayitlar = sb.table("satin_alma_gecmisi").select("*").eq("sku", sku).order("satin_alma_tarihi", desc=True).execute().data or []
 
         toplam_firma_stok = sum(firma_stoklari.values())
         toplam_stok = bizim_stok + toplam_firma_stok
@@ -614,16 +603,7 @@ def siparis_uyarisi_kontrol(sku, firma, firma_data, bizim_stok):
     return firma_stok <= esik
 
 def muadil_bul(sku):
-    """Ürün bittiğinde muadil önerir"""
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT * FROM urunler WHERE sku=?", (sku,))
-    row = c.fetchone()
-    conn.close()
-    if not row:
-        return []
-    row = dict(row)
-    return get_muadil_oneriler(sku, row.get("kategori", ""), row.get("marka", ""), row.get("fiyat", 0))
+    return []
 
 def dashboard_hesapla():
     """Tüm dashboard verilerini hesaplar ve döndürür"""

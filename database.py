@@ -1,634 +1,295 @@
-import sqlite3
-import os
-from datetime import datetime
+"""
+KAYRANPM — Veritabanı Katmanı (Supabase PostgreSQL)
+"""
+import streamlit as st
+from supabase import create_client, Client
+from datetime import date
+from collections import defaultdict
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stok_data.db")
-
-def get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def initialize_db():
-    conn = get_connection()
-    c = conn.cursor()
-
-    # Ana ürün kataloğu (bizim stoğumuz)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS urunler (
-            sku TEXT PRIMARY KEY,
-            urun_adi TEXT NOT NULL,
-            kategori TEXT,
-            marka TEXT,
-            satis_fiyati REAL,
-            alis_fiyati REAL,
-            hedef_kar_marji REAL,
-            ozellikler TEXT,
-            ilk_giris_tarihi TEXT,
-            bizim_stok INTEGER DEFAULT 0,
-            trendyol_stok INTEGER DEFAULT 0,
-            guncelleme_tarihi TEXT
-        )
-    """)
-    # Eski tablolarda eksik kolonları ekle (migration)
-    for kolon, tip in [("alis_fiyati","REAL"), ("hedef_kar_marji","REAL"), ("satis_fiyati","REAL")]:
-        try:
-            c.execute(f"ALTER TABLE urunler ADD COLUMN {kolon} {tip}")
-        except:
-            pass
-
-    # Firma stokları ve satışları (haftalık yüklenen)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS firma_stok (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            firma TEXT NOT NULL,
-            sku TEXT NOT NULL,
-            urun_adi TEXT,
-            stok_miktari INTEGER DEFAULT 0,
-            haftalik_satis INTEGER DEFAULT 0,
-            yukleme_tarihi TEXT,
-            UNIQUE(firma, sku, yukleme_tarihi)
-        )
-    """)
-
-    # Yoldaki ürünler
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS yoldaki_urunler (
-            sku TEXT PRIMARY KEY,
-            urun_adi TEXT,
-            yoldaki_miktar INTEGER DEFAULT 0,
-            tahmini_varis_tarihi TEXT,
-            yoldaki_tedarikci TEXT,
-            yukleme_tarihi TEXT
-        )
-    """)
-    try:
-        c.execute("ALTER TABLE yoldaki_urunler ADD COLUMN yoldaki_tedarikci TEXT")
-    except:
-        pass
-
-    # Satın alma geçmişi
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS satin_alma_gecmisi (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sku TEXT NOT NULL,
-            urun_adi TEXT,
-            tedarikci TEXT,
-            satin_alma_tarihi TEXT,
-            adet INTEGER DEFAULT 0,
-            alis_fiyati REAL DEFAULT 0,
-            maliyet_yuzdesi REAL DEFAULT 0,
-            toplam_maliyet REAL DEFAULT 0,
-            notlar TEXT,
-            kayit_tarihi TEXT
-        )
-    """)
-    # Eski tablolara eksik kolonları ekle (migration)
-    for kolon, tip in [
-        ("alis_fiyati", "REAL"),
-        ("maliyet_yuzdesi", "REAL"),
-    ]:
-        try:
-            c.execute(f"ALTER TABLE satin_alma_gecmisi ADD COLUMN {kolon} {tip}")
-        except:
-            pass
-
-    # Kampanya takip
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS kampanyalar (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            kampanya_adi TEXT NOT NULL,
-            firma TEXT NOT NULL,
-            baslangic_tarihi TEXT,
-            bitis_tarihi TEXT,
-            durum TEXT DEFAULT 'aktif',
-            notlar TEXT,
-            olusturma_tarihi TEXT
-        )
-    """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS kampanya_urunler (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            kampanya_id INTEGER NOT NULL,
-            sku TEXT NOT NULL,
-            urun_adi TEXT,
-            pacal_maliyet REAL DEFAULT 0,
-            satis_fiyati REAL DEFAULT 0,
-            birim_firma_destek REAL DEFAULT 0,
-            birim_ek_destek REAL DEFAULT 0,
-            satilan_adet INTEGER DEFAULT 0,
-            notlar TEXT,
-            FOREIGN KEY (kampanya_id) REFERENCES kampanyalar(id)
-        )
-    """)
-
-    # Stok yaşı takibi (ilk görüldüğü tarih)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS stok_yas (
-            sku TEXT PRIMARY KEY,
-            ilk_gorulen_tarih TEXT NOT NULL
-        )
-    """)
-
-    # Satın alma geçmişi
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS satin_alma_gecmisi (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sku TEXT NOT NULL,
-            urun_adi TEXT,
-            tedarikci TEXT,
-            satin_alma_tarihi TEXT,
-            adet INTEGER DEFAULT 0,
-            birim_alis_fiyati REAL DEFAULT 0,
-            toplam_maliyet REAL DEFAULT 0,
-            birim_maliyet REAL DEFAULT 0,
-            notlar TEXT,
-            kayit_tarihi TEXT
-        )
-    """)
-
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS siparis_onerileri (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            firma TEXT NOT NULL,
-            sku TEXT NOT NULL,
-            urun_adi TEXT,
-            oneri_miktari INTEGER,
-            durum TEXT DEFAULT 'beklemede',
-            olusturma_tarihi TEXT,
-            onay_tarihi TEXT
-        )
-    """)
-
-    conn.commit()
-    conn.close()
+def get_client() -> Client:
+    url = st.secrets["supabase"]["url"]
+    key = st.secrets["supabase"]["key"]
+    return create_client(url, key)
 
 def get_today():
-    return datetime.now().strftime("%Y-%m-%d")
+    return date.today().isoformat()
 
-def upsert_urun(sku, urun_adi, kategori="", marka="", satis_fiyati=0.0, alis_fiyati=0.0, hedef_kar_marji=0.0, ozellikler="", bizim_stok=0, trendyol_stok=0):
-    conn = get_connection()
-    c = conn.cursor()
+def initialize_db():
+    pass
+
+def _rows(response):
+    return response.data if response.data else []
+
+def _row(response):
+    d = response.data
+    return d[0] if d else None
+
+# ── ÜRÜNLER ─────────────────────────────────────────────────────────
+
+def upsert_urun(sku, urun_adi, kategori="", marka="", satis_fiyati=0.0,
+                alis_fiyati=0.0, hedef_kar_marji=0.0, ozellikler="",
+                bizim_stok=0, trendyol_stok=0):
+    sb = get_client()
     bugun = get_today()
-    c.execute("SELECT ilk_giris_tarihi FROM urunler WHERE sku=?", (sku,))
-    row = c.fetchone()
-    ilk_tarih = row["ilk_giris_tarihi"] if row and row["ilk_giris_tarihi"] else bugun
-
-    c.execute("""
-        INSERT INTO urunler (sku, urun_adi, kategori, marka, satis_fiyati, alis_fiyati, hedef_kar_marji, ozellikler, ilk_giris_tarihi, bizim_stok, trendyol_stok, guncelleme_tarihi)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(sku) DO UPDATE SET
-            urun_adi=excluded.urun_adi,
-            kategori=excluded.kategori,
-            marka=excluded.marka,
-            satis_fiyati=excluded.satis_fiyati,
-            alis_fiyati=excluded.alis_fiyati,
-            hedef_kar_marji=excluded.hedef_kar_marji,
-            ozellikler=excluded.ozellikler,
-            bizim_stok=excluded.bizim_stok,
-            trendyol_stok=excluded.trendyol_stok,
-            guncelleme_tarihi=excluded.guncelleme_tarihi
-    """, (sku, urun_adi, kategori, marka, satis_fiyati, alis_fiyati, hedef_kar_marji, ozellikler, ilk_tarih, bizim_stok, trendyol_stok, bugun))
-
-    c.execute("INSERT OR IGNORE INTO stok_yas (sku, ilk_gorulen_tarih) VALUES (?, ?)", (sku, bugun))
-    conn.commit()
-    conn.close()
-
-def upsert_firma_stok(firma, sku, urun_adi, stok_miktari, haftalik_satis):
-    conn = get_connection()
-    c = conn.cursor()
-    bugun = get_today()
-    c.execute("""
-        INSERT INTO firma_stok (firma, sku, urun_adi, stok_miktari, haftalik_satis, yukleme_tarihi)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(firma, sku, yukleme_tarihi) DO UPDATE SET
-            stok_miktari=excluded.stok_miktari,
-            haftalik_satis=excluded.haftalik_satis,
-            urun_adi=excluded.urun_adi
-    """, (firma, sku, urun_adi, stok_miktari, haftalik_satis, bugun))
-    conn.commit()
-    conn.close()
+    mevcut = _row(sb.table("urunler").select("ilk_giris_tarihi").eq("sku", sku).execute())
+    ilk_tarih = mevcut["ilk_giris_tarihi"] if mevcut and mevcut.get("ilk_giris_tarihi") else bugun
+    sb.table("urunler").upsert({
+        "sku": sku, "urun_adi": urun_adi, "kategori": kategori or "",
+        "marka": marka or "", "satis_fiyati": float(satis_fiyati or 0),
+        "alis_fiyati": float(alis_fiyati or 0),
+        "hedef_kar_marji": float(hedef_kar_marji or 0),
+        "ozellikler": ozellikler or "",
+        "bizim_stok": int(bizim_stok or 0),
+        "trendyol_stok": int(trendyol_stok or 0),
+        "ilk_giris_tarihi": ilk_tarih,
+        "guncelleme_tarihi": bugun,
+    }, on_conflict="sku").execute()
+    sb.table("stok_yas").upsert(
+        {"sku": sku, "ilk_gorulen_tarih": bugun}, on_conflict="sku"
+    ).execute()
 
 def get_all_dashboard_data():
-    """Dashboard için tüm verileri hesaplayarak getirir"""
-    conn = get_connection()
-    c = conn.cursor()
-
-    # Tüm ürünler
-    c.execute("SELECT * FROM urunler ORDER BY urun_adi")
-    urunler = [dict(r) for r in c.fetchall()]
-
-    # Tüm firma stokları (son yükleme tarihi)
+    sb = get_client()
+    urunler = _rows(sb.table("urunler").select("*").order("urun_adi").execute())
     firma_listesi = ["ITOPYA", "HB", "VATAN", "MONDAY", "KANAL", "DIGER"]
     firma_data = {}
     for firma in firma_listesi:
-        c.execute("""
-            SELECT fs.* FROM firma_stok fs
-            WHERE fs.firma = ? AND fs.yukleme_tarihi = (
-                SELECT MAX(yukleme_tarihi) FROM firma_stok WHERE firma = ?
-            )
-        """, (firma, firma))
-        rows = c.fetchall()
-        firma_data[firma] = {r["sku"]: dict(r) for r in rows}
-
-    # Stok yaşları
-    c.execute("SELECT * FROM stok_yas")
-    stok_yaslar = {r["sku"]: r["ilk_gorulen_tarih"] for r in c.fetchall()}
-
-    conn.close()
-    return urunler, firma_data, stok_yaslar
-
-def get_siparis_onerileri(durum=None):
-    conn = get_connection()
-    c = conn.cursor()
-    if durum:
-        c.execute("SELECT * FROM siparis_onerileri WHERE durum=? ORDER BY olusturma_tarihi DESC", (durum,))
-    else:
-        c.execute("SELECT * FROM siparis_onerileri ORDER BY olusturma_tarihi DESC")
-    rows = [dict(r) for r in c.fetchall()]
-    conn.close()
-    return rows
-
-def ekle_siparis_onerisi(firma, sku, urun_adi, oneri_miktari):
-    conn = get_connection()
-    c = conn.cursor()
-    bugun = get_today()
-    c.execute("""
-        INSERT INTO siparis_onerileri (firma, sku, urun_adi, oneri_miktari, durum, olusturma_tarihi)
-        VALUES (?, ?, ?, ?, 'beklemede', ?)
-    """, (firma, sku, urun_adi, oneri_miktari, bugun))
-    conn.commit()
-    conn.close()
-
-def onayla_siparis(siparis_id):
-    conn = get_connection()
-    c = conn.cursor()
-    bugun = get_today()
-    c.execute("UPDATE siparis_onerileri SET durum='onaylandi', onay_tarihi=? WHERE id=?", (bugun, siparis_id))
-    conn.commit()
-    conn.close()
-
-def reddet_siparis(siparis_id):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("UPDATE siparis_onerileri SET durum='reddedildi' WHERE id=?", (siparis_id,))
-    conn.commit()
-    conn.close()
-
-def upsert_yoldaki_urun(sku, urun_adi, yoldaki_miktar, tahmini_varis_tarihi, yoldaki_tedarikci=""):
-    conn = get_connection()
-    c = conn.cursor()
-    bugun = get_today()
-    c.execute("""
-        INSERT INTO yoldaki_urunler (sku, urun_adi, yoldaki_miktar, tahmini_varis_tarihi, yoldaki_tedarikci, yukleme_tarihi)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(sku) DO UPDATE SET
-            urun_adi=excluded.urun_adi,
-            yoldaki_miktar=excluded.yoldaki_miktar,
-            tahmini_varis_tarihi=excluded.tahmini_varis_tarihi,
-            yoldaki_tedarikci=excluded.yoldaki_tedarikci,
-            yukleme_tarihi=excluded.yukleme_tarihi
-    """, (sku, urun_adi, yoldaki_miktar, tahmini_varis_tarihi, yoldaki_tedarikci, bugun))
-    conn.commit()
-    conn.close()
-
-def get_yoldaki_urunler():
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT * FROM yoldaki_urunler")
-    rows = {r["sku"]: dict(r) for r in c.fetchall()}
-    conn.close()
-    return rows
-
-def get_gecmis_satis(sku, hafta_sayisi=4):
-    """Son N haftanın toplam haftalık satışını (tüm firmalar) tarih sıralamasıyla döndürür"""
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("""
-        SELECT yukleme_tarihi, SUM(haftalik_satis) as toplam_satis
-        FROM firma_stok
-        WHERE sku = ?
-        GROUP BY yukleme_tarihi
-        ORDER BY yukleme_tarihi DESC
-        LIMIT ?
-    """, (sku, hafta_sayisi))
-    rows = [{"tarih": r["yukleme_tarihi"], "satis": r["toplam_satis"]} for r in c.fetchall()]
-    conn.close()
-    return rows  # En yeni tarih önce
-
-def get_tum_gecmis_satislar(hafta_sayisi=4):
-    """Tüm SKU'lar için son N haftanın geçmiş satışlarını döndürür"""
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("""
-        SELECT sku, yukleme_tarihi, SUM(haftalik_satis) as toplam_satis
-        FROM firma_stok
-        GROUP BY sku, yukleme_tarihi
-        ORDER BY sku, yukleme_tarihi DESC
-    """)
-    rows = c.fetchall()
-    conn.close()
-
-    sonuc = {}
-    for r in rows:
-        sku = r["sku"]
-        if sku not in sonuc:
-            sonuc[sku] = []
-        if len(sonuc[sku]) < hafta_sayisi:
-            sonuc[sku].append({
-                "tarih": r["yukleme_tarihi"],
-                "satis": r["toplam_satis"] or 0
-            })
-    return sonuc
-
-def ekle_satin_alma(sku, urun_adi, tedarikci, tarih, adet, alis_fiyati, maliyet_yuzdesi, notlar=""):
-    """Yeni satın alma kaydı ekler. toplam_maliyet = alis_fiyati * (1 + maliyet_yuzdesi/100)"""
-    conn = get_connection()
-    c = conn.cursor()
-    toplam_birim_maliyet = alis_fiyati * (1 + maliyet_yuzdesi / 100)
-    toplam_maliyet = toplam_birim_maliyet * adet
-    c.execute("""
-        INSERT INTO satin_alma_gecmisi
-        (sku, urun_adi, tedarikci, satin_alma_tarihi, adet, alis_fiyati, maliyet_yuzdesi, toplam_maliyet, notlar, kayit_tarihi)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (sku, urun_adi, tedarikci, tarih, adet, alis_fiyati, maliyet_yuzdesi,
-          toplam_maliyet, notlar, get_today()))
-    conn.commit()
-    conn.close()
-
-def guncelle_satin_alma(kayit_id, tedarikci, tarih, adet, alis_fiyati, maliyet_yuzdesi, notlar=""):
-    """Mevcut satın alma kaydını günceller"""
-    conn = get_connection()
-    c = conn.cursor()
-    toplam_maliyet = alis_fiyati * (1 + maliyet_yuzdesi / 100)
-    c.execute("""
-        UPDATE satin_alma_gecmisi SET
-            tedarikci=?, satin_alma_tarihi=?, adet=?, alis_fiyati=?,
-            maliyet_yuzdesi=?, toplam_maliyet=?, notlar=?
-        WHERE id=?
-    """, (tedarikci, tarih, adet, alis_fiyati, maliyet_yuzdesi, toplam_maliyet, notlar, kayit_id))
-    conn.commit()
-    conn.close()
-
-def sil_satin_alma(kayit_id):
-    """Satın alma kaydını siler"""
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("DELETE FROM satin_alma_gecmisi WHERE id=?", (kayit_id,))
-    conn.commit()
-    conn.close()
-
-def get_satin_alma_gecmisi(sku=None):
-    """Satın alma geçmişini getirir. sku verilirse o ürünün geçmişi, yoksa tümü."""
-    conn = get_connection()
-    c = conn.cursor()
-    if sku:
-        c.execute("""
-            SELECT * FROM satin_alma_gecmisi
-            WHERE sku=? ORDER BY satin_alma_tarihi DESC
-        """, (sku,))
-    else:
-        c.execute("""
-            SELECT * FROM satin_alma_gecmisi
-            ORDER BY satin_alma_tarihi DESC
-        """)
-    rows = [dict(r) for r in c.fetchall()]
-    conn.close()
-    return rows
-
-def get_satin_alma_ozet(sku=None):
-    """Bir SKU için satın alma özeti. sku=None ise tüm ürünler."""
-    conn = get_connection()
-    c = conn.cursor()
-    if sku:
-        c.execute("""
-            SELECT
-                COUNT(*) as siparis_sayisi,
-                SUM(adet) as toplam_adet,
-                AVG(alis_fiyati) as ort_alis,
-                SUM(toplam_maliyet) / NULLIF(SUM(adet), 0) as ort_maliyet,
-                MIN(satin_alma_tarihi) as ilk_satin_alma,
-                MAX(satin_alma_tarihi) as son_satin_alma
-            FROM satin_alma_gecmisi
-            WHERE sku=?
-        """, (sku,))
-        row = c.fetchone()
-        conn.close()
-        return dict(row) if row else None
-    else:
-        c.execute("""
-            SELECT sku,
-                COUNT(*) as siparis_sayisi,
-                SUM(adet) as toplam_adet,
-                AVG(alis_fiyati) as ort_alis,
-                SUM(toplam_maliyet) / NULLIF(SUM(adet), 0) as ort_maliyet,
-                MIN(satin_alma_tarihi) as ilk_satin_alma,
-                MAX(satin_alma_tarihi) as son_satin_alma
-            FROM satin_alma_gecmisi
-            GROUP BY sku
-        """)
-        rows = [dict(r) for r in c.fetchall()]
-        conn.close()
-        return rows
-
-def get_tum_tedarikciler():
-    """Daha önce girilmiş tedarikçi adlarını döndürür (autocomplete için)"""
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT DISTINCT tedarikci FROM satin_alma_gecmisi WHERE tedarikci != '' ORDER BY tedarikci")
-    rows = [r["tedarikci"] for r in c.fetchall()]
-    conn.close()
-    return rows
-
-def get_gecmis_satis_firma_bazli(sku):
-    """Bir SKU için firma bazında tüm geçmiş haftalık satışları döndürür"""
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("""
-        SELECT firma, yukleme_tarihi, haftalik_satis, stok_miktari
-        FROM firma_stok
-        WHERE sku = ?
-        ORDER BY yukleme_tarihi ASC
-    """, (sku,))
-    rows = [dict(r) for r in c.fetchall()]
-    conn.close()
-    return rows
+        son = _row(sb.table("firma_stok").select("yukleme_tarihi").eq("firma", firma)
+                   .order("yukleme_tarihi", desc=True).limit(1).execute())
+        if son:
+            rows = _rows(sb.table("firma_stok").select("*")
+                        .eq("firma", firma).eq("yukleme_tarihi", son["yukleme_tarihi"]).execute())
+            firma_data[firma] = {r["sku"]: r for r in rows}
+        else:
+            firma_data[firma] = {}
+    stok_yas_data = {r["sku"]: r for r in _rows(sb.table("stok_yas").select("*").execute())}
+    yoldaki_data = {r["sku"]: r for r in _rows(sb.table("yoldaki_urunler").select("*").execute())}
+    tum_firma_rows = _rows(sb.table("firma_stok").select("*").order("yukleme_tarihi").execute())
+    gecmis_satislar = defaultdict(list)
+    for row in tum_firma_rows:
+        gecmis_satislar[row["sku"]].append(row.get("haftalik_satis", 0) or 0)
+    return urunler, firma_data, stok_yas_data, yoldaki_data, dict(gecmis_satislar)
 
 def get_urun_detay(sku):
-    """Tek bir ürünün tüm detaylarını döndürür"""
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT * FROM urunler WHERE sku=?", (sku,))
-    row = c.fetchone()
-    conn.close()
-    return dict(row) if row else None
+    return _row(get_client().table("urunler").select("*").eq("sku", sku).execute())
 
-def get_satin_alma_gecmisi(sku=None):
-    """SKU bazında veya tüm satın alma geçmişini getirir"""
-    conn = get_connection()
-    c = conn.cursor()
-    if sku:
-        c.execute("SELECT * FROM satin_alma_gecmisi WHERE sku=? ORDER BY satin_alma_tarihi DESC", (sku,))
-    else:
-        c.execute("SELECT * FROM satin_alma_gecmisi ORDER BY satin_alma_tarihi DESC")
-    rows = [dict(r) for r in c.fetchall()]
-    conn.close()
-    return rows
+def sil_urun(sku):
+    sb = get_client()
+    for tablo in ["urunler", "firma_stok", "satin_alma_gecmisi",
+                  "yoldaki_urunler", "stok_yas", "siparis_onerileri"]:
+        sb.table(tablo).delete().eq("sku", sku).execute()
+
+def get_tum_sku_listesi():
+    return _rows(get_client().table("urunler").select("sku, urun_adi").order("sku").execute())
+
+# ── FİRMA STOK ──────────────────────────────────────────────────────
+
+def upsert_firma_stok(firma, sku, urun_adi, stok_miktari, haftalik_satis):
+    get_client().table("firma_stok").upsert({
+        "firma": firma, "sku": sku, "urun_adi": urun_adi or "",
+        "stok_miktari": int(stok_miktari or 0),
+        "haftalik_satis": int(haftalik_satis or 0),
+        "yukleme_tarihi": get_today(),
+    }, on_conflict="firma,sku,yukleme_tarihi").execute()
+
+# ── YOLDAKI ─────────────────────────────────────────────────────────
+
+def upsert_yoldaki_urun(sku, urun_adi, yoldaki_miktar, tahmini_varis_tarihi, yoldaki_tedarikci=""):
+    get_client().table("yoldaki_urunler").upsert({
+        "sku": sku, "urun_adi": urun_adi or "",
+        "yoldaki_miktar": int(yoldaki_miktar or 0),
+        "tahmini_varis_tarihi": str(tahmini_varis_tarihi or ""),
+        "yoldaki_tedarikci": yoldaki_tedarikci or "",
+        "yukleme_tarihi": get_today(),
+    }, on_conflict="sku").execute()
+
+def get_yoldaki_urunler():
+    rows = _rows(get_client().table("yoldaki_urunler").select("*").execute())
+    return {r["sku"]: r for r in rows}
+
+# ── SATIN ALMA ──────────────────────────────────────────────────────
+
+def ekle_satin_alma(sku, urun_adi, tedarikci, tarih, adet, alis_fiyati, maliyet_yuzdesi, notlar=""):
+    toplam_birim = float(alis_fiyati or 0) * (1 + float(maliyet_yuzdesi or 0) / 100)
+    get_client().table("satin_alma_gecmisi").insert({
+        "sku": sku, "urun_adi": urun_adi or "", "tedarikci": tedarikci or "",
+        "satin_alma_tarihi": str(tarih), "adet": int(adet or 0),
+        "alis_fiyati": float(alis_fiyati or 0),
+        "maliyet_yuzdesi": float(maliyet_yuzdesi or 0),
+        "toplam_maliyet": toplam_birim * int(adet or 0),
+        "notlar": notlar or "", "kayit_tarihi": get_today(),
+    }).execute()
+
+def guncelle_satin_alma(kayit_id, tedarikci, tarih, adet, alis_fiyati, maliyet_yuzdesi, notlar=""):
+    toplam_birim = float(alis_fiyati or 0) * (1 + float(maliyet_yuzdesi or 0) / 100)
+    get_client().table("satin_alma_gecmisi").update({
+        "tedarikci": tedarikci, "satin_alma_tarihi": str(tarih),
+        "adet": int(adet), "alis_fiyati": float(alis_fiyati),
+        "maliyet_yuzdesi": float(maliyet_yuzdesi),
+        "toplam_maliyet": toplam_birim * int(adet),
+        "notlar": notlar or "",
+    }).eq("id", kayit_id).execute()
 
 def sil_satin_alma(kayit_id):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("DELETE FROM satin_alma_gecmisi WHERE id=?", (kayit_id,))
-    conn.commit()
-    conn.close()
+    get_client().table("satin_alma_gecmisi").delete().eq("id", kayit_id).execute()
 
-def get_ortalama_maliyet(sku):
-    """Ağırlıklı ortalama birim maliyet hesaplar"""
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("""
-        SELECT SUM(toplam_maliyet) as toplam, SUM(adet) as adet_toplam
-        FROM satin_alma_gecmisi WHERE sku=? AND adet > 0
-    """, (sku,))
-    row = c.fetchone()
-    conn.close()
-    if row and row["adet_toplam"] and row["adet_toplam"] > 0:
-        return round(row["toplam"] / row["adet_toplam"], 2)
-    return 0.0
+def get_satin_alma_gecmisi(sku=None):
+    sb = get_client()
+    q = sb.table("satin_alma_gecmisi").select("*").order("satin_alma_tarihi", desc=True)
+    if sku:
+        q = q.eq("sku", sku)
+    return _rows(q.execute())
 
-def get_muadil_oneriler(sku, kategori, marka, fiyat):
-    """Aynı kategori ve benzer fiyat aralığında muadil ürünler önerir"""
-    conn = get_connection()
-    c = conn.cursor()
-    fiyat_min = fiyat * 0.7 if fiyat else 0
-    fiyat_maks = fiyat * 1.3 if fiyat else 999999
-    c.execute("""
-        SELECT * FROM urunler
-        WHERE sku != ? AND kategori = ? AND bizim_stok > 0
-        AND (fiyat BETWEEN ? AND ? OR fiyat IS NULL OR fiyat = 0)
-        ORDER BY bizim_stok DESC
-        LIMIT 5
-    """, (sku, kategori, fiyat_min, fiyat_maks))
-    rows = [dict(r) for r in c.fetchall()]
-    conn.close()
-    return rows
+def get_satin_alma_ozet(sku=None):
+    sb = get_client()
+    if sku:
+        rows = _rows(sb.table("satin_alma_gecmisi").select("*").eq("sku", sku).execute())
+        if not rows:
+            return None
+        toplam_adet = sum(r.get("adet", 0) or 0 for r in rows)
+        toplam_mal = sum(r.get("toplam_maliyet", 0) or 0 for r in rows)
+        ort_alis = sum(r.get("alis_fiyati", 0) or 0 for r in rows) / len(rows)
+        ort_maliyet = toplam_mal / toplam_adet if toplam_adet > 0 else 0
+        tarihleri = [r["satin_alma_tarihi"] for r in rows if r.get("satin_alma_tarihi")]
+        return {
+            "siparis_sayisi": len(rows), "toplam_adet": toplam_adet,
+            "ort_alis": ort_alis, "ort_maliyet": ort_maliyet,
+            "ilk_satin_alma": min(tarihleri) if tarihleri else "",
+            "son_satin_alma": max(tarihleri) if tarihleri else "",
+        }
+    else:
+        rows = _rows(sb.table("satin_alma_gecmisi").select("*").execute())
+        sku_groups = defaultdict(list)
+        for r in rows:
+            sku_groups[r["sku"]].append(r)
+        result = []
+        for s, grup in sku_groups.items():
+            toplam_adet = sum(r.get("adet", 0) or 0 for r in grup)
+            ort_maliyet = sum(r.get("toplam_maliyet", 0) or 0 for r in grup) / toplam_adet if toplam_adet else 0
+            result.append({"sku": s, "siparis_sayisi": len(grup), "toplam_adet": toplam_adet, "ort_maliyet": ort_maliyet})
+        return result
 
-# ── Kampanya fonksiyonları ──────────────────────────────────────────
+def get_tum_tedarikciler():
+    rows = _rows(get_client().table("satin_alma_gecmisi").select("tedarikci").execute())
+    return list(set(r["tedarikci"] for r in rows if r.get("tedarikci")))
+
+# ── SİPARİŞ ÖNERİLERİ ───────────────────────────────────────────────
+
+def ekle_siparis_onerisi(firma, sku, urun_adi, miktar):
+    get_client().table("siparis_onerileri").insert({
+        "firma": firma, "sku": sku, "urun_adi": urun_adi or "",
+        "oneri_miktari": int(miktar or 0),
+        "durum": "bekliyor", "olusturma_tarihi": get_today(),
+    }).execute()
+
+def get_siparis_onerileri():
+    return _rows(get_client().table("siparis_onerileri").select("*").order("olusturma_tarihi", desc=True).execute())
+
+def onayla_siparis(kayit_id):
+    get_client().table("siparis_onerileri").update(
+        {"durum": "onaylandi", "onay_tarihi": get_today()}
+    ).eq("id", kayit_id).execute()
+
+def reddet_siparis(kayit_id):
+    get_client().table("siparis_onerileri").update(
+        {"durum": "reddedildi", "onay_tarihi": get_today()}
+    ).eq("id", kayit_id).execute()
+
+# ── KAMPANYALAR ─────────────────────────────────────────────────────
 
 def ekle_kampanya(kampanya_adi, firma, baslangic, bitis, notlar=""):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("""
-        INSERT INTO kampanyalar (kampanya_adi, firma, baslangic_tarihi, bitis_tarihi, durum, notlar, olusturma_tarihi)
-        VALUES (?, ?, ?, ?, 'aktif', ?, ?)
-    """, (kampanya_adi, firma, baslangic, bitis, notlar, get_today()))
-    kampanya_id = c.lastrowid
-    conn.commit()
-    conn.close()
-    return kampanya_id
+    r = get_client().table("kampanyalar").insert({
+        "kampanya_adi": kampanya_adi, "firma": firma,
+        "baslangic_tarihi": str(baslangic), "bitis_tarihi": str(bitis),
+        "durum": "aktif", "notlar": notlar or "",
+        "olusturma_tarihi": get_today(),
+    }).execute()
+    return r.data[0]["id"] if r.data else None
 
 def get_kampanyalar(durum=None):
-    conn = get_connection()
-    c = conn.cursor()
+    sb = get_client()
+    q = sb.table("kampanyalar").select("*").order("olusturma_tarihi", desc=True)
     if durum:
-        c.execute("SELECT * FROM kampanyalar WHERE durum=? ORDER BY olusturma_tarihi DESC", (durum,))
-    else:
-        c.execute("SELECT * FROM kampanyalar ORDER BY olusturma_tarihi DESC")
-    rows = [dict(r) for r in c.fetchall()]
-    conn.close()
-    return rows
+        q = q.eq("durum", durum)
+    return _rows(q.execute())
 
 def get_kampanya(kampanya_id):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT * FROM kampanyalar WHERE id=?", (kampanya_id,))
-    row = c.fetchone()
-    conn.close()
-    return dict(row) if row else None
+    return _row(get_client().table("kampanyalar").select("*").eq("id", kampanya_id).execute())
 
 def guncelle_kampanya(kampanya_id, kampanya_adi, firma, baslangic, bitis, notlar):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("""
-        UPDATE kampanyalar SET kampanya_adi=?, firma=?, baslangic_tarihi=?, bitis_tarihi=?, notlar=?
-        WHERE id=?
-    """, (kampanya_adi, firma, baslangic, bitis, notlar, kampanya_id))
-    conn.commit()
-    conn.close()
+    get_client().table("kampanyalar").update({
+        "kampanya_adi": kampanya_adi, "firma": firma,
+        "baslangic_tarihi": str(baslangic), "bitis_tarihi": str(bitis),
+        "notlar": notlar or "",
+    }).eq("id", kampanya_id).execute()
 
 def kapat_kampanya(kampanya_id):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("UPDATE kampanyalar SET durum='kapali' WHERE id=?", (kampanya_id,))
-    conn.commit()
-    conn.close()
+    get_client().table("kampanyalar").update({"durum": "kapali"}).eq("id", kampanya_id).execute()
 
 def sil_kampanya(kampanya_id):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("DELETE FROM kampanya_urunler WHERE kampanya_id=?", (kampanya_id,))
-    c.execute("DELETE FROM kampanyalar WHERE id=?", (kampanya_id,))
-    conn.commit()
-    conn.close()
+    sb = get_client()
+    sb.table("kampanya_urunler").delete().eq("kampanya_id", kampanya_id).execute()
+    sb.table("kampanyalar").delete().eq("id", kampanya_id).execute()
 
 def ekle_kampanya_urun(kampanya_id, sku, urun_adi, pacal_maliyet, satis_fiyati,
                        birim_firma_destek, birim_ek_destek, notlar=""):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("""
-        INSERT INTO kampanya_urunler
-        (kampanya_id, sku, urun_adi, pacal_maliyet, satis_fiyati, birim_firma_destek, birim_ek_destek, satilan_adet, notlar)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
-    """, (kampanya_id, sku, urun_adi, pacal_maliyet, satis_fiyati,
-          birim_firma_destek, birim_ek_destek, notlar))
-    conn.commit()
-    conn.close()
+    get_client().table("kampanya_urunler").insert({
+        "kampanya_id": kampanya_id, "sku": sku, "urun_adi": urun_adi or "",
+        "pacal_maliyet": float(pacal_maliyet or 0),
+        "satis_fiyati": float(satis_fiyati or 0),
+        "birim_firma_destek": float(birim_firma_destek or 0),
+        "birim_ek_destek": float(birim_ek_destek or 0),
+        "satilan_adet": 0, "notlar": notlar or "",
+    }).execute()
 
 def get_kampanya_urunler(kampanya_id):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT * FROM kampanya_urunler WHERE kampanya_id=? ORDER BY id", (kampanya_id,))
-    rows = [dict(r) for r in c.fetchall()]
-    conn.close()
-    return rows
+    return _rows(get_client().table("kampanya_urunler").select("*").eq("kampanya_id", kampanya_id).order("id").execute())
 
 def guncelle_kampanya_urun(urun_id, satis_fiyati, birim_firma_destek, birim_ek_destek, satilan_adet, notlar=""):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("""
-        UPDATE kampanya_urunler SET
-            satis_fiyati=?, birim_firma_destek=?, birim_ek_destek=?,
-            satilan_adet=?, notlar=?
-        WHERE id=?
-    """, (satis_fiyati, birim_firma_destek, birim_ek_destek, satilan_adet, notlar, urun_id))
-    conn.commit()
-    conn.close()
+    get_client().table("kampanya_urunler").update({
+        "satis_fiyati": float(satis_fiyati or 0),
+        "birim_firma_destek": float(birim_firma_destek or 0),
+        "birim_ek_destek": float(birim_ek_destek or 0),
+        "satilan_adet": int(satilan_adet or 0),
+        "notlar": notlar or "",
+    }).eq("id", urun_id).execute()
 
 def sil_kampanya_urun(urun_id):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("DELETE FROM kampanya_urunler WHERE id=?", (urun_id,))
-    conn.commit()
-    conn.close()
+    get_client().table("kampanya_urunler").delete().eq("id", urun_id).execute()
 
-def sil_urun(sku):
-    """Ürünü ve ilgili tüm kayıtları siler"""
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("DELETE FROM urunler WHERE sku=?", (sku,))
-    c.execute("DELETE FROM firma_stok WHERE sku=?", (sku,))
-    c.execute("DELETE FROM satin_alma_gecmisi WHERE sku=?", (sku,))
-    c.execute("DELETE FROM yoldaki_urunler WHERE sku=?", (sku,))
-    c.execute("DELETE FROM stok_yas WHERE sku=?", (sku,))
-    c.execute("DELETE FROM siparis_onerileri WHERE sku=?", (sku,))
-    conn.commit()
-    conn.close()
+# ── BİLDİRİM ────────────────────────────────────────────────────────
 
-def get_tum_sku_listesi():
-    """SKU ve ürün adı listesi döndürür"""
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("SELECT sku, urun_adi FROM urunler ORDER BY sku")
-    rows = [dict(r) for r in c.fetchall()]
-    conn.close()
-    return rows
+def get_bildirim_ayarlari_db():
+    rows = _rows(get_client().table("bildirim_ayarlari").select("*").limit(1).execute())
+    return rows[0] if rows else {}
+
+def kaydet_bildirim_ayarlari_db(email, smtp_server, smtp_port, smtp_user, smtp_password, aktif):
+    sb = get_client()
+    mevcut = _rows(sb.table("bildirim_ayarlari").select("id").limit(1).execute())
+    data = {"email": email, "smtp_server": smtp_server, "smtp_port": int(smtp_port or 587),
+            "smtp_user": smtp_user, "smtp_password": smtp_password, "aktif": aktif}
+    if mevcut:
+        sb.table("bildirim_ayarlari").update(data).eq("id", mevcut[0]["id"]).execute()
+    else:
+        sb.table("bildirim_ayarlari").insert(data).execute()
+
+# ── ANALİTİK ────────────────────────────────────────────────────────
+
+def get_gecmis_satis_firma_bazli(sku, firma):
+    rows = _rows(get_client().table("firma_stok").select("haftalik_satis, yukleme_tarihi")
+                .eq("sku", sku).eq("firma", firma)
+                .order("yukleme_tarihi", desc=True).limit(8).execute())
+    return [r.get("haftalik_satis", 0) or 0 for r in rows]
+
+def get_tum_gecmis_satislar():
+    rows = _rows(get_client().table("firma_stok").select("sku, haftalik_satis, yukleme_tarihi").order("yukleme_tarihi").execute())
+    result = defaultdict(list)
+    for r in rows:
+        result[r["sku"]].append(r.get("haftalik_satis", 0) or 0)
+    return dict(result)
+
+def get_muadil_oneriler(sku, kategori, marka, fiyat):
+    return []
+
+def get_connection():
+    return None
