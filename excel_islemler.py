@@ -139,11 +139,29 @@ def excel_yukle_firma_stoklari(dosya_yolu):
                     if not sku or sku == "nan":
                         continue
                     urun_adi = str(row.get(kolon_map.get("URUN_ADI", ""), "")).strip() if "URUN_ADI" in kolon_map else ""
+                    if urun_adi == "nan": urun_adi = ""
                     stok = int(row.get(kolon_map.get("STOK", ""), 0) or 0) if "STOK" in kolon_map else 0
-                    satis = int(row.get(kolon_map.get("SATIS", ""), 0) or 0) if "SATIS" in kolon_map else 0
+                    try:
+                        satis_raw = row.get(kolon_map.get("SATIS", ""), 0)
+                        satis = int(float(satis_raw)) if satis_raw and str(satis_raw) != "nan" else 0
+                    except:
+                        satis = 0
+
+                    # Eğer SKU urunler tablosunda yoksa otomatik ekle
+                    from database import get_connection as _gc2
+                    _conn = _gc2(); _c = _conn.cursor()
+                    _c.execute("SELECT COUNT(*) as n FROM urunler WHERE sku=?", (sku,))
+                    if _c.fetchone()["n"] == 0:
+                        _c.execute("""
+                            INSERT INTO urunler (sku, urun_adi, kategori, marka, satis_fiyati, alis_fiyati, hedef_kar_marji, ozellikler, bizim_stok, trendyol_stok, guncelleme_tarihi)
+                            VALUES (?, ?, '', '', 0, 0, 0, '', 0, 0, date('now'))
+                        """, (sku, urun_adi or sku))
+                        _conn.commit()
+                    _conn.close()
+
                     upsert_firma_stok(firma, sku, urun_adi, stok, satis)
                     basarili += 1
-                except:
+                except Exception as ex:
                     pass
             
             sonuclar.append(f"✅ {firma}: {basarili} ürün yüklendi.")
