@@ -607,9 +607,19 @@ def muadil_bul(sku):
 
 def dashboard_hesapla():
     """Tüm dashboard verilerini hesaplar ve döndürür"""
-    urunler, firma_data, stok_yaslar = get_all_dashboard_data()
-    yoldaki_data = get_yoldaki_urunler()
-    gecmis_satislar = get_tum_gecmis_satislar(hafta_sayisi=4)
+    urunler, firma_data, stok_yaslar, yoldaki_data, gecmis_satislar_raw = get_all_dashboard_data()
+    # gecmis_satislar_raw: {sku: [satis1, satis2, ...]} — trend_hesapla formatına çevir
+    gecmis_satislar = {}
+    for sku, satislar in gecmis_satislar_raw.items():
+        gecmis_satislar[sku] = [{"satis": s} for s in satislar]
+
+    # stok_yaslar Supabase'den dict olarak geliyor
+    stok_yas_map = {}
+    for sku, v in stok_yaslar.items():
+        if isinstance(v, dict):
+            stok_yas_map[sku] = v.get("ilk_gorulen_tarih", "")
+        else:
+            stok_yas_map[sku] = v or ""
 
     dashboard_satirlar = []
 
@@ -621,7 +631,7 @@ def dashboard_hesapla():
         kategori = urun.get("kategori", "")
 
         # Stok yaşı
-        ilk_tarih = stok_yaslar.get(sku) or urun.get("ilk_giris_tarihi", "")
+        ilk_tarih = stok_yas_map.get(sku) or urun.get("ilk_giris_tarihi", "")
         stok_gun, stok_renk = stok_yasi_hesapla(ilk_tarih)
 
         # Firma bazlı veriler
