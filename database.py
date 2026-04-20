@@ -610,3 +610,25 @@ def sil_kampanya_urun(urun_id):
     c.execute("DELETE FROM kampanya_urunler WHERE id=?", (urun_id,))
     conn.commit()
     conn.close()
+
+def sil_urun(sku):
+    """Ürünü ve ilgili tüm kayıtları siler"""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM urunler WHERE sku=?", (sku,))
+    c.execute("DELETE FROM firma_stok WHERE sku=?", (sku,))
+    c.execute("DELETE FROM satin_alma_gecmisi WHERE sku=?", (sku,))
+    c.execute("DELETE FROM yoldaki_urunler WHERE sku=?", (sku,))
+    c.execute("DELETE FROM stok_yas WHERE sku=?", (sku,))
+    c.execute("DELETE FROM siparis_onerileri WHERE sku=?", (sku,))
+    conn.commit()
+    conn.close()
+
+def get_tum_sku_listesi():
+    """SKU ve ürün adı listesi döndürür"""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT sku, urun_adi FROM urunler ORDER BY sku")
+    rows = [dict(r) for r in c.fetchall()]
+    conn.close()
+    return rows

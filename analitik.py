@@ -657,6 +657,11 @@ def dashboard_hesapla():
                 f_stok = 0
                 f_satis = 0
 
+            # Firmada stok yoksa satır oluşturma
+            if f_stok == 0:
+                satis_karsilastirma.append((firma, f_satis))
+                continue
+
             gun_sayisi, gun_renk = kac_gunluk_satis(bizim_stok, f_satis)
             uyari = siparis_uyarisi_kontrol(sku, firma, firma_data, bizim_stok)
             muadil_gerekli = False

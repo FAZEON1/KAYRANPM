@@ -16,7 +16,8 @@ from database import (initialize_db, onayla_siparis, reddet_siparis,
                       ekle_kampanya, get_kampanyalar, get_kampanya,
                       guncelle_kampanya, kapat_kampanya, sil_kampanya,
                       ekle_kampanya_urun, get_kampanya_urunler,
-                      guncelle_kampanya_urun, sil_kampanya_urun)
+                      guncelle_kampanya_urun, sil_kampanya_urun,
+                      sil_urun, get_tum_sku_listesi)
 from analitik import dashboard_hesapla, genel_analiz_hesapla, tum_urunler_listesi, siparis_onerisi_listesi
 from excel_islemler import (excel_yukle_ana_stok, excel_yukle_firma_stoklari,
                             excel_yukle_yoldaki_urunler, create_sample_excel_bytes)
@@ -247,17 +248,30 @@ if sayfa == "📊  Dashboard":
     # Filtrele
     gosterilecek = []
     for urun in veri:
-        for fd in urun["firma_detay"]:
-            firma_adi = fd["firma"]
-            if filtre_firma != "Tüm Firmalar":
-                hedef = filtre_firma.replace("İ","I").replace("Ğ","G").replace("Ü","U").replace("Ş","S").replace("Ç","C").replace("Ö","O")
-                kaynak = firma_adi.replace("İ","I").replace("Ğ","G").replace("Ü","U").replace("Ş","S").replace("Ç","C").replace("Ö","O")
-                if hedef not in kaynak:
-                    continue
-            if arama:
-                if arama.lower() not in urun["sku"].lower() and arama.lower() not in urun["urun_adi"].lower():
-                    continue
-            gosterilecek.append((urun, fd))
+        # Stoku olan firmalar
+        firmali_satirlar = [fd for fd in urun["firma_detay"] if fd.get("stok", 0) > 0]
+
+        # Firma filtresi varsa sadece o firmayı göster
+        if filtre_firma != "Tüm Firmalar":
+            hedef = filtre_firma.replace("İ","I").replace("Ğ","G").replace("Ü","U").replace("Ş","S").replace("Ç","C").replace("Ö","O")
+            firmali_satirlar = [fd for fd in firmali_satirlar if hedef in fd["firma"].replace("İ","I").replace("Ğ","G").replace("Ü","U").replace("Ş","S").replace("Ç","C").replace("Ö","O")]
+
+        # Arama filtresi
+        if arama:
+            if arama.lower() not in urun["sku"].lower() and arama.lower() not in urun["urun_adi"].lower():
+                continue
+
+        if firmali_satirlar:
+            # Firmada stok var — her firma için ayrı satır
+            for fd in firmali_satirlar:
+                gosterilecek.append((urun, fd))
+        else:
+            # Hiçbir firmada stok yok — ürünü yine de göster (sadece G5F depo bilgisiyle)
+            if filtre_firma == "Tüm Firmalar":
+                # Boş bir firma satırı oluştur
+                bos_fd = {"firma": "—", "stok": 0, "haftalik_satis": 0,
+                          "siparis_uyarisi": False, "muadil_gerekli": False}
+                gosterilecek.append((urun, bos_fd))
 
     # İstatistik kartları
     toplam_sku = len(set(u["sku"] for u in veri))
@@ -1271,8 +1285,41 @@ elif sayfa == "📋  Tüm Ürünler":
         return styles
     st.dataframe(df_oz.style.apply(oz_rengi, axis=1), use_container_width=True, height=400, hide_index=True)
 
+    # ── Ürün Silme ────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### 🗑️ Ürün Sil")
+    st.caption("Seçilen ürünü ve tüm ilgili kayıtlarını (firma stok, satın alma geçmişi, sipariş önerileri) siler. Bu işlem geri alınamaz.")
 
-elif sayfa == "🛒  Satın Alma Geçmişi":
+    tum_sku = get_tum_sku_listesi()
+    if tum_sku:
+        sil_col1, sil_col2 = st.columns([3, 1])
+        with sil_col1:
+            # SKU arama ile filtrele
+            sil_ara = st.text_input("SKU veya ürün adı ile ara", placeholder="Aramak için yaz...", key="sil_ara")
+            if sil_ara:
+                filtrelenmis_sil = [u for u in tum_sku if sil_ara.upper() in u["sku"].upper() or sil_ara.lower() in (u.get("urun_adi","") or "").lower()]
+            else:
+                filtrelenmis_sil = tum_sku
+
+            sil_secenekler = {f"{u['sku']} — {(u.get('urun_adi') or '')[:50]}": u["sku"] for u in filtrelenmis_sil}
+            if sil_secenekler:
+                sil_secim = st.selectbox("Silinecek Ürün", list(sil_secenekler.keys()), key="sil_secim")
+                sil_sku = sil_secenekler[sil_secim]
+            else:
+                st.info("Eşleşen ürün bulunamadı.")
+                sil_sku = None
+
+        with sil_col2:
+            st.markdown("<br><br>", unsafe_allow_html=True)
+            if sil_sku:
+                # Onay mekanizması
+                onay = st.checkbox(f"Silmeyi onaylıyorum", key="sil_onay")
+                if st.button("🗑️ Sil", type="primary", use_container_width=True, disabled=not onay):
+                    sil_urun(sil_sku)
+                    st.success(f"✅ {sil_sku} silindi.")
+                    st.rerun()
+
+
     st.markdown('<div class="baslik">🛒 Satın Alma Geçmişi</div>', unsafe_allow_html=True)
     st.markdown('<div class="alt-baslik">Tüm ürünlerin satın alma kayıtları — tarih, tedarikçi, FOB, Cost Price</div>', unsafe_allow_html=True)
 
@@ -1542,6 +1589,19 @@ elif sayfa == "🎯  Kampanya Takip":
                     rows_ku = []
                     for ku in k_urunler:
                         pacal = ku.get("pacal_maliyet") or 0
+
+                        # Paçal 0 ise güncel değeri çek ve güncelle
+                        if pacal == 0:
+                            u_bilgi_c = urun_dict_k.get(ku["sku"], {})
+                            pacal_guncel = u_bilgi_c.get("final_cost_price", 0)
+                            if pacal_guncel > 0:
+                                from database import get_connection as _gc_k
+                                _conn_k = _gc_k(); _c_k = _conn_k.cursor()
+                                _c_k.execute("UPDATE kampanya_urunler SET pacal_maliyet=? WHERE id=?",
+                                            (pacal_guncel, ku["id"]))
+                                _conn_k.commit(); _conn_k.close()
+                                pacal = pacal_guncel
+
                         satis = ku.get("satis_fiyati") or 0
                         fd = ku.get("birim_firma_destek") or 0
                         ed = ku.get("birim_ek_destek") or 0
@@ -1706,6 +1766,9 @@ elif sayfa == "🎯  Kampanya Takip":
                         rows_g = []
                         for ku in k_urunler:
                             pacal = ku.get("pacal_maliyet") or 0
+                            # Paçal 0 ise güncel değeri çek
+                            if pacal == 0:
+                                pacal = urun_dict_k.get(ku["sku"], {}).get("final_cost_price", 0)
                             satis = ku.get("satis_fiyati") or 0
                             fd = ku.get("birim_firma_destek") or 0
                             ed = ku.get("birim_ek_destek") or 0
@@ -1772,6 +1835,21 @@ elif sayfa == "📦  Sipariş Önerisi":
         fcp = ud.get("final_cost_price", 0)
         satis = ud.get("satis_fiyati", 0)
 
+        # Stoku olan firmaları bul
+        firma_detay = urun.get("firma_detay", [])
+        firmalar_str = ""
+        if firma_detay:
+            firma_bilgiler = []
+            for fd in firma_detay:
+                if fd.get("stok", 0) > 0:
+                    firma_bilgiler.append(
+                        f'<span style="background:rgba(255,255,255,0.15); padding:2px 8px; '
+                        f'border-radius:6px; margin-right:4px; font-size:12px;">'
+                        f'🏪 {fd["firma"]}: {fd["stok"]} adet</span>'
+                    )
+            if firma_bilgiler:
+                firmalar_str = f'<div style="margin-top:6px;">{"".join(firma_bilgiler)}</div>'
+
         # Renk ve ikon
         if durum == "acil":
             renk_kodu = "#7F0000"
@@ -1795,9 +1873,10 @@ elif sayfa == "📦  Sipariş Önerisi":
               </div>
               <div style="color:#CFD8DC; font-size:13px; margin-top:6px;">
                 📅 {mesaj} &nbsp;|&nbsp;
-                📦 Bizim stok: <b>{urun['bizim_stok']} adet</b> &nbsp;|&nbsp;
+                📦 G5F Depo: <b>{urun['bizim_stok']} adet</b> &nbsp;|&nbsp;
                 📊 Hft. satış: <b>{urun.get('ortalama_haftalik_satis',0):.1f} adet</b>
               </div>
+              {firmalar_str}
               <div style="color:#FFD54F; font-size:13px; margin-top:4px; font-weight:600;">
                 💡 {oneri_mesaj}
               </div>

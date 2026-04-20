@@ -2,6 +2,16 @@ import pandas as pd
 from datetime import datetime
 from database import upsert_urun, upsert_firma_stok, get_connection, upsert_yoldaki_urun
 
+def normalize_sku(sku):
+    """Fazeon/FAZEON gibi marka prefix'lerini SKU'dan temizler ve büyük harfe çevirir."""
+    sku = str(sku).strip()
+    for prefix in ["FAZEON ", "Fazeon ", "fazeon "]:
+        if sku.startswith(prefix):
+            sku = sku[len(prefix):]
+            break
+    return sku.strip().upper()
+
+
 FIRMA_LISTESI = ["ITOPYA", "HB", "VATAN", "MONDAY", "KANAL", "DIGER"]
 
 def excel_yukle_ana_stok(dosya_yolu):
@@ -135,8 +145,8 @@ def excel_yukle_firma_stoklari(dosya_yolu):
             basarili = 0
             for _, row in df.iterrows():
                 try:
-                    sku = str(row[kolon_map["SKU"]]).strip()
-                    if not sku or sku == "nan":
+                    sku = normalize_sku(row[kolon_map["SKU"]])
+                    if not sku or sku == "NAN":
                         continue
                     urun_adi = str(row.get(kolon_map.get("URUN_ADI", ""), "")).strip() if "URUN_ADI" in kolon_map else ""
                     if urun_adi == "nan": urun_adi = ""
