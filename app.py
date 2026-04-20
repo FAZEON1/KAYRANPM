@@ -17,7 +17,7 @@ from database import (initialize_db, onayla_siparis, reddet_siparis,
                       guncelle_kampanya, kapat_kampanya, sil_kampanya,
                       ekle_kampanya_urun, get_kampanya_urunler,
                       guncelle_kampanya_urun, sil_kampanya_urun,
-                      sil_urun, get_tum_sku_listesi)
+                      sil_urun, get_tum_sku_listesi, get_client)
 from analitik import dashboard_hesapla, genel_analiz_hesapla, tum_urunler_listesi, siparis_onerisi_listesi
 from excel_islemler import (excel_yukle_ana_stok, excel_yukle_firma_stoklari,
                             excel_yukle_yoldaki_urunler, create_sample_excel_bytes)
@@ -1991,6 +1991,60 @@ elif sayfa == "📂  Veri Yükleme":
     | G5F STOK | Bizim depo stoğumuz + yoldaki bilgiler | SKU, Ürün Adı, Kategori, Marka, Satış Fiyatı ($), Alış Fiyatı ($), Hedef Kar Marjı (%), Bizim Stok, **Yoldaki Miktar**, **Tahmini Varış Tarihi**, **Yoldaki Tedarikçi** |
     | ITOPYA / HB / VATAN / MONDAY / KANAL / DIGER | Firma stokları | SKU, Ürün Adı, Stok Miktarı, Haftalık Satış |
     """)
+
+    st.markdown("---")
+    st.subheader("📅 Geçmiş Yüklemeler")
+    st.caption("Hangi tarihlerde veri yüklendiğini görün ve gerekirse silin.")
+
+    try:
+        sb_vy = get_client()
+
+        # Firma stok yükleme tarihleri
+        firma_tarihler = sb_vy.table("firma_stok").select("yukleme_tarihi, firma").execute().data or []
+        tarih_firma = {}
+        for r in firma_tarihler:
+            t = r["yukleme_tarihi"]
+            if t not in tarih_firma:
+                tarih_firma[t] = set()
+            tarih_firma[t].add(r["firma"])
+
+        # Ürün yükleme tarihleri
+        urun_tarihler = sb_vy.table("urunler").select("guncelleme_tarihi").execute().data or []
+        urun_tarih_set = set(r["guncelleme_tarihi"] for r in urun_tarihler if r.get("guncelleme_tarihi"))
+
+        if not tarih_firma and not urun_tarih_set:
+            st.info("Henüz veri yüklenmemiş.")
+        else:
+            tum_tarihler = sorted(set(list(tarih_firma.keys()) + list(urun_tarih_set)), reverse=True)
+
+            rows_vy = []
+            for t in tum_tarihler:
+                firmalar = ", ".join(sorted(tarih_firma.get(t, [])))
+                urun_sayisi = len([r for r in urun_tarihler if r.get("guncelleme_tarihi") == t])
+                firma_kayit = sum(1 for r in firma_tarihler if r["yukleme_tarihi"] == t)
+                rows_vy.append({
+                    "Tarih": t,
+                    "Yüklenen Ürün": urun_sayisi,
+                    "Firma Kayıt Sayısı": firma_kayit,
+                    "Firmalar": firmalar or "—",
+                })
+
+            df_vy = pd.DataFrame(rows_vy)
+            st.dataframe(df_vy, use_container_width=True, hide_index=True)
+
+            # Tarih seçip sil
+            with st.expander("🗑️ Belirli Bir Tarihin Firma Stok Verisini Sil"):
+                st.caption("⚠️ Seçilen tarihe ait firma stok verileri silinir. Ürün listesi ve satın alma geçmişi etkilenmez.")
+                sil_tarih = st.selectbox("Silinecek Tarih", sorted(tarih_firma.keys(), reverse=True), key="vy_sil_tarih")
+                if st.button("🗑️ Bu Tarihin Verisini Sil", type="secondary", key="vy_sil_btn"):
+                    sb_vy.table("firma_stok").delete().eq("yukleme_tarihi", sil_tarih).execute()
+                    st.success(f"✅ {sil_tarih} tarihli firma stok verisi silindi.")
+                    st.rerun()
+
+    except Exception as e:
+        st.warning(f"Geçmiş yüklemeler yüklenemedi: {e}")
+
+
 
 
 # ════════════════════════════════════════════════════════════════════
