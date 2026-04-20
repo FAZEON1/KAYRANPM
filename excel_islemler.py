@@ -55,6 +55,7 @@ def excel_yukle_ana_stok(dosya_yolu):
         
         basarili = 0
         hatali = 0
+        hata_mesajlari = []
         for _, row in df.iterrows():
             try:
                 sku = str(row[kolon_map["SKU"]]).strip()
@@ -93,8 +94,10 @@ def excel_yukle_ana_stok(dosya_yolu):
                 basarili += 1
             except Exception as e:
                 hatali += 1
+                hata_mesajlari.append(f"{sku}: {str(e)}")
         
-        return True, f"{basarili} ürün başarıyla yüklendi. {hatali} satır atlandı."
+        hata_detay = f" | Hatalar: {'; '.join(hata_mesajlari[:3])}" if hata_mesajlari else ""
+        return True, f"{basarili} ürün başarıyla yüklendi. {hatali} satır atlandı.{hata_detay}"
     except Exception as e:
         return False, f"Dosya okunamadı: {str(e)}"
 
