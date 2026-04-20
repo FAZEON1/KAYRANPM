@@ -2,6 +2,10 @@ import pandas as pd
 from datetime import datetime
 from database import upsert_urun, upsert_firma_stok, get_client, upsert_yoldaki_urun
 
+def tr_upper(s):
+    """Türkçe karakterleri de doğru büyüten upper fonksiyonu"""
+    return str(s).strip().upper().replace("İ","I").replace("Ğ","G").replace("Ü","U").replace("Ş","S").replace("Ç","C").replace("Ö","O")
+
 def normalize_sku(sku):
     """Fazeon/FAZEON gibi marka prefix'lerini SKU'dan temizler ve büyük harfe çevirir."""
     sku = str(sku).strip()
@@ -21,27 +25,27 @@ def excel_yukle_ana_stok(dosya_yolu):
     """
     try:
         df = pd.read_excel(dosya_yolu, sheet_name=0)  # İlk sekmeyi oku (G5F STOK)
-        df.columns = [str(c).strip().upper() for c in df.columns]
+        df.columns = [tr_upper(c) for c in df.columns]
         
         kolon_esleme = {
-            "SKU": ["SKU", "KOD", "ÜRÜN KODU", "URUN KODU", "BARKOD"],
-            "URUN_ADI": ["ÜRÜN ADI", "URUN ADI", "AD", "ÜRÜN", "URUN", "PRODUCT"],
-            "KATEGORI": ["KATEGORİ", "KATEGORI", "CATEGORY"],
+            "SKU": ["SKU", "KOD", "URUN KODU", "BARKOD"],
+            "URUN_ADI": ["URUN ADI", "AD", "URUN", "PRODUCT"],
+            "KATEGORI": ["KATEGORI", "CATEGORY"],
             "MARKA": ["MARKA", "BRAND"],
-            "SATIS_FIYATI": ["SATIŞ FİYATI ($)", "SATIS FIYATI ($)", "SATIŞ FİYATI", "FİYAT", "FIYAT", "PRICE"],
-            "ALIS_FIYATI": ["ALIŞ FİYATI ($)", "ALIS FIYATI ($)", "ALIŞ FİYATI", "MALİYET", "COST"],
+            "SATIS_FIYATI": ["SATIS FIYATI ($)", "SATIS FIYATI", "FIYAT", "PRICE"],
+            "ALIS_FIYATI": ["ALIS FIYATI ($)", "ALIS FIYATI", "MALIYET", "COST"],
             "HEDEF_KAR": ["HEDEF KAR MARJI (%)", "HEDEF KAR MARJI", "HEDEF KAR", "KAR MARJI", "MARGIN"],
-            "BIZIM_STOK": ["BİZİM STOK", "BIZIM STOK", "DEPO STOK", "STOK", "G5F STOK"],
-            "YOLDAKI_MIKTAR": ["YOLDAKİ MİKTAR", "YOLDAKI MIKTAR", "YOL MİKTAR", "YOLDA"],
-            "VARIS_TARIHI": ["TAHMİNİ VARIŞ TARİHİ", "TAHMINI VARIS TARIHI", "VARIŞ TARİHİ", "VARIS TARIHI", "ETA"],
-            "YOLDAKI_TEDARIKCI": ["YOLDAKİ TEDARİKÇİ", "YOLDAKI TEDARIKCI", "TEDARİKÇİ", "TEDARIKCI"],
+            "BIZIM_STOK": ["BIZIM STOK", "DEPO STOK", "STOK", "G5F STOK"],
+            "YOLDAKI_MIKTAR": ["YOLDAKI MIKTAR", "YOL MIKTAR", "YOLDA"],
+            "VARIS_TARIHI": ["TAHMINI VARIS TARIHI", "VARIS TARIHI", "TAHMINI VARIS", "ETA"],
+            "YOLDAKI_TEDARIKCI": ["YOLDAKI TEDARIKCI", "TEDARIKCI"],
         }
         
         kolon_map = {}
         for hedef, alternatifler in kolon_esleme.items():
             for alt in alternatifler:
-                if alt in df.columns:
-                    kolon_map[hedef] = alt
+                if tr_upper(alt) in df.columns:
+                    kolon_map[hedef] = tr_upper(alt)
                     break
         
         if "SKU" not in kolon_map:
@@ -122,20 +126,20 @@ def excel_yukle_firma_stoklari(dosya_yolu):
                 continue
             
             df = pd.read_excel(dosya_yolu, sheet_name=eslesen_sekme)
-            df.columns = [str(c).strip().upper() for c in df.columns]
+            df.columns = [tr_upper(c) for c in df.columns]
             
             kolon_esleme = {
-                "SKU": ["SKU", "KOD", "ÜRÜN KODU", "URUN KODU", "BARKOD"],
-                "URUN_ADI": ["ÜRÜN ADI", "URUN ADI", "AD", "ÜRÜN", "URUN"],
-                "STOK": ["STOK MİKTARI", "STOK MIKTARI", "STOK", "MEVCUT STOK", "ADET"],
-                "SATIS": ["HAFTALIK SATIŞ", "HAFTALIK SATIS", "SATIŞ", "SATIS", "SATIS ADEDI"],
+                "SKU": ["SKU", "KOD", "URUN KODU", "BARKOD"],
+                "URUN_ADI": ["URUN ADI", "AD", "URUN"],
+                "STOK": ["STOK MIKTARI", "STOK", "MEVCUT STOK", "ADET"],
+                "SATIS": ["HAFTALIK SATIS", "SATIS", "SATIS ADEDI"],
             }
             
             kolon_map = {}
             for hedef, alternatifler in kolon_esleme.items():
                 for alt in alternatifler:
-                    if alt in df.columns:
-                        kolon_map[hedef] = alt
+                    if tr_upper(alt) in df.columns:
+                        kolon_map[hedef] = tr_upper(alt)
                         break
             
             if "SKU" not in kolon_map:
@@ -212,8 +216,8 @@ def excel_yukle_yoldaki_urunler(dosya_yolu):
         kolon_map = {}
         for hedef, alternatifler in kolon_esleme.items():
             for alt in alternatifler:
-                if alt in df.columns:
-                    kolon_map[hedef] = alt
+                if tr_upper(alt) in df.columns:
+                    kolon_map[hedef] = tr_upper(alt)
                     break
 
         if "SKU" not in kolon_map:
