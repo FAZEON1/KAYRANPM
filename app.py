@@ -338,7 +338,7 @@ if sayfa == "📊  Dashboard":
             yol_mesaj = urun.get("yol_mesaj", "")
             yol_miktar = urun.get("yol_miktar", 0)
             yol_metin = f"{YOL_ETIKET.get(yol_renk,'—')} {yol_miktar} adet | {yol_mesaj}" if yol_renk != "yok" else "—"
-            uyari = "⚠️ SİPARİŞ ÖNER!" if fd["siparis_uyarisi"] else ""
+            uyari = "⚠️ SİPARİŞ ÖNER!" if fd.get("siparis_uyarisi") else ""
             olu_durum = urun.get("olu_stok_durum", "normal")
             olu_mesaj = urun.get("olu_stok_mesaj", "")
             satirlar.append({
@@ -356,18 +356,18 @@ if sayfa == "📊  Dashboard":
                 "Risk Etiketi": urun.get("risk_etiketi", "—"),
                 "🪦 Stok Durumu": olu_mesaj if olu_mesaj else "—",
                 "Ölü Durum": olu_durum,
-                "Firma": fd["firma"],
-                "Firma Stok": fd["stok"],
-                "Haftalık Satış": fd["satis"],
-                "Stok Yaşı": f"{urun['stok_gun']} gün",
-                "Stok Renk": urun["stok_renk"],
-                "Performans": fd["performans"],
+                "Firma": fd.get("firma", "—"),
+                "Firma Stok": fd.get("stok", 0),
+                "Haftalık Satış": fd.get("satis", 0),
+                "Stok Yaşı": f"{urun.get('stok_gun', 0)} gün",
+                "Stok Renk": urun.get("stok_renk", "yok"),
+                "Performans": fd.get("performans", "veri yok"),
                 "Yoldaki Durum": yol_metin,
                 "Yol Renk": yol_renk,
                 "Stok Yayılımı": yayilim,
                 "Uyarı": uyari,
-                "_sku": urun["sku"], "_firma": fd["firma"], "_urun_adi": urun["urun_adi"],
-                "_siparis_uyarisi": fd["siparis_uyarisi"], "_muadil_gerekli": fd["muadil_gerekli"],
+                "_sku": urun["sku"], "_firma": fd.get("firma",""), "_urun_adi": urun["urun_adi"],
+                "_siparis_uyarisi": fd.get("siparis_uyarisi", False), "_muadil_gerekli": fd.get("muadil_gerekli", False),
             })
 
         df = pd.DataFrame(satirlar)
@@ -2179,4 +2179,3 @@ elif sayfa == "🔔  Bildirim Ayarları":
         st.dataframe(df_ozet.style.apply(ozet_rengi, axis=1), use_container_width=True, height=400)
     except Exception as e:
         st.error(f"Veri yüklenemedi: {e}")
-
