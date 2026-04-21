@@ -763,10 +763,10 @@ if sayfa == "📊  Dashboard":
                 fig_dag = px.pie(
                     df_dag, names="Kanal", values="Stok",
                     title="📦 Toplam Stok Dağılımı (Kanal Bazında)",
-                    color_discrete_sequence=px.colors.qualitative.Set2,
+                    color_discrete_sequence=["#42A5F5","#66BB6A","#FFA726","#EF5350","#AB47BC","#26C6DA","#D4E157","#FF7043"],
                     hole=0.35,
                 )
-                fig_dag.update_layout(height=340, paper_bgcolor="white", margin=dict(t=40,b=0,l=0,r=0))
+                fig_dag.update_layout(height=340, paper_bgcolor="rgba(0,0,0,0)", font_color="#CFD8DC", title_font_color="#90CAF9", legend=dict(font=dict(color="#90A4AE")), margin=dict(t=40,b=0,l=0,r=0))
                 fig_dag.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig_dag, use_container_width=True)
             else:
@@ -794,7 +794,7 @@ if sayfa == "📊  Dashboard":
                     text="Ürün Sayısı",
                 )
                 fig_sip.update_traces(textposition='outside', marker_line_color='rgba(0,0,0,0.2)', marker_line_width=1)
-                fig_sip.update_layout(height=340, paper_bgcolor="white", plot_bgcolor="white",
+                fig_sip.update_layout(height=340, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(7,13,26,0.8)",
                                       showlegend=False, margin=dict(t=40,b=0,l=0,r=0))
                 st.plotly_chart(fig_sip, use_container_width=True)
 
@@ -819,7 +819,7 @@ if sayfa == "📊  Dashboard":
                     text="Ort. Hft. Satış",
                 )
                 fig_top.update_traces(textposition='outside')
-                fig_top.update_layout(height=340, paper_bgcolor="white", plot_bgcolor="white",
+                fig_top.update_layout(height=340, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(7,13,26,0.8)",
                                       showlegend=True, margin=dict(t=40,b=0,l=0,r=0),
                                       legend_title="Trend")
                 st.plotly_chart(fig_top, use_container_width=True)
@@ -847,7 +847,7 @@ if sayfa == "📊  Dashboard":
                     color_discrete_map=renk_yas,
                     hole=0.35,
                 )
-                fig_yas.update_layout(height=340, paper_bgcolor="white", margin=dict(t=40,b=0,l=0,r=0))
+                fig_yas.update_layout(height=340, paper_bgcolor="rgba(0,0,0,0)", font_color="#CFD8DC", title_font_color="#90CAF9", legend=dict(font=dict(color="#90A4AE")), margin=dict(t=40,b=0,l=0,r=0))
                 fig_yas.update_traces(textposition='inside', textinfo='percent+label')
                 st.plotly_chart(fig_yas, use_container_width=True)
 
@@ -871,8 +871,23 @@ elif sayfa == "🔍  Ürün Detay":
         st.stop()
 
     sku_listesi = {f"{u['sku']} — {u['urun_adi']}": u['sku'] for u in veri}
-    secim = st.selectbox("Ürün Seçin", list(sku_listesi.keys()))
-    secilen_sku = sku_listesi[secim]
+
+    # SKU/ürün adı arama
+    ara_col, sec_col = st.columns([1, 2])
+    with ara_col:
+        arama_ud = st.text_input("🔍 SKU veya ürün adı ara", placeholder="Yazmaya başla...", key="ud_ara")
+    with sec_col:
+        if arama_ud:
+            filtre = {k: v for k, v in sku_listesi.items()
+                      if arama_ud.upper() in v.upper() or arama_ud.lower() in k.lower()}
+        else:
+            filtre = sku_listesi
+        if not filtre:
+            st.warning("Eşleşen ürün bulunamadı.")
+            st.stop()
+        secim = st.selectbox("Ürün Seç", list(filtre.keys()), label_visibility="collapsed")
+
+    secilen_sku = filtre[secim]
     urun = next(u for u in veri if u["sku"] == secilen_sku)
 
     st.markdown("---")
@@ -914,7 +929,7 @@ elif sayfa == "🔍  Ürün Detay":
         # TAB 1: Toplam satış trendi
         # TAB 2: Firma bazında satış
         # TAB 3: Stok seviyeleri
-        gtab1, gtab2, gtab3 = st.tabs(["📈 Toplam Satış Trendi", "🏪 Firma Bazında Satış", "📦 Stok Seviyeleri"])
+        gtab1, gtab2, gtab3 = st.tabs(["📈 Satış Trendi", "🏪 Firma Bazlı", "📦 Stok Seviyeleri"])
 
         with gtab1:
             # Haftalık toplam satış
@@ -930,7 +945,7 @@ elif sayfa == "🔍  Ürün Detay":
                 y=toplam_df["Toplam Satış"],
                 mode="lines+markers",
                 name="Haftalık Satış",
-                line=dict(color="#1F4E79", width=3),
+                line=dict(color="#42A5F5", width=2.5),
                 marker=dict(size=8),
             ))
 
@@ -950,12 +965,13 @@ elif sayfa == "🔍  Ürün Detay":
             trend_renk = {"yukseliyor": "#2E7D32", "dusuyor": "#C62828", "stabil": "#F57C00"}.get(trend_yon, "#666")
 
             fig.update_layout(
-                title=dict(text=f"Haftalık Toplam Satış Trendi — {urun['urun_adi']}", font=dict(size=15)),
-                xaxis_title="Hafta",
-                yaxis_title="Satış Adedi",
+                title=dict(text=f"Haftalık Toplam Satış Trendi — {urun['urun_adi']}", font=dict(size=15, color="#90CAF9")),
+                xaxis_title="Hafta", xaxis=dict(color="#546E7A", gridcolor="rgba(255,255,255,0.05)"),
+                yaxis_title="Satış Adedi", yaxis=dict(color="#546E7A", gridcolor="rgba(255,255,255,0.05)"),
+                font=dict(color="#CFD8DC"),
                 height=380,
-                plot_bgcolor="white",
-                paper_bgcolor="white",
+                plot_bgcolor="rgba(255,255,255,0.03)",
+                paper_bgcolor="rgba(0,0,0,0)",
                 hovermode="x unified",
                 showlegend=True,
                 annotations=[dict(
@@ -963,7 +979,8 @@ elif sayfa == "🔍  Ürün Detay":
                     text=f"Trend: {urun.get('trend_mesaji','—')}",
                     showarrow=False,
                     font=dict(size=13, color=trend_renk),
-                    bgcolor="white",
+                    bgcolor="rgba(7,13,26,0.9)",
+                    font=dict(size=13, color="#CFD8DC"),
                     bordercolor=trend_renk,
                     borderwidth=1,
                     borderpad=4,
@@ -1000,13 +1017,10 @@ elif sayfa == "🔍  Ürün Detay":
                 ))
 
             fig2.update_layout(
-                title=dict(text=f"Firma Bazında Haftalık Satış — {urun['urun_adi']}", font=dict(size=15)),
-                xaxis_title="Hafta",
-                yaxis_title="Satış Adedi",
-                barmode="group",
-                height=380,
-                plot_bgcolor="white",
-                paper_bgcolor="white",
+                title=dict(text=f"Firma Bazında Haftalık Satış — {urun['urun_adi']}", font=dict(size=15, color="#90CAF9")),
+                xaxis_title="Hafta", yaxis_title="Satış Adedi",
+                barmode="group", height=380,
+                font=dict(color="#CFD8DC"), xaxis=dict(color="#546E7A", gridcolor="rgba(255,255,255,0.05)"), yaxis=dict(color="#546E7A", gridcolor="rgba(255,255,255,0.05)"), legend=dict(font=dict(color="#90A4AE")), plot_bgcolor="rgba(255,255,255,0.03)", paper_bgcolor="rgba(0,0,0,0)",
                 hovermode="x unified",
             )
             st.plotly_chart(fig2, use_container_width=True)
@@ -1041,12 +1055,10 @@ elif sayfa == "🔍  Ürün Detay":
                 ))
 
             fig3.update_layout(
-                title=dict(text=f"Firma Stok Seviyeleri — {urun['urun_adi']}", font=dict(size=15)),
-                xaxis_title="Hafta",
-                yaxis_title="Stok Adedi",
+                title=dict(text=f"Firma Stok Seviyeleri — {urun['urun_adi']}", font=dict(size=15, color="#90CAF9")),
+                xaxis_title="Hafta", yaxis_title="Stok Adedi",
                 height=380,
-                plot_bgcolor="white",
-                paper_bgcolor="white",
+                font=dict(color="#CFD8DC"), xaxis=dict(color="#546E7A", gridcolor="rgba(255,255,255,0.05)"), yaxis=dict(color="#546E7A", gridcolor="rgba(255,255,255,0.05)"), legend=dict(font=dict(color="#90A4AE")), plot_bgcolor="rgba(255,255,255,0.03)", paper_bgcolor="rgba(0,0,0,0)",
                 hovermode="x unified",
             )
             st.plotly_chart(fig3, use_container_width=True)
@@ -1407,31 +1419,33 @@ elif sayfa == "📋  Tüm Ürünler":
     toplam_firma = secilen.get("toplam_firma_stok", 0)
     toplam = secilen.get("toplam_stok", bizim_stok + toplam_firma)
 
-    # Stok bar'ı
-    st.markdown(f"""
-    <div style="background:rgba(255,255,255,0.05); border-radius:12px; padding:20px; margin-bottom:16px; border:1px solid rgba(255,255,255,0.1)">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-            <span style="color:#90CAF9; font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:1px;">STOK DAĞILIMI</span>
-            <span style="color:#FFD54F; font-size:20px; font-weight:800;">Toplam: {toplam:,} adet</span>
-        </div>
-        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:10px;">
-            <div style="background:#1F4E79; border-radius:8px; padding:12px; text-align:center;">
-                <div style="color:#90CAF9; font-size:11px; font-weight:600; margin-bottom:4px;">G5F DEPO</div>
-                <div style="color:#FFFFFF; font-size:22px; font-weight:800;">{bizim_stok:,}</div>
-                <div style="color:#64B5F6; font-size:11px;">adet</div>
-            </div>
-            {"".join([
-                f'<div style="background:#1B3A2A; border-radius:8px; padding:12px; text-align:center;">'
-                f'<div style="color:#81C784; font-size:11px; font-weight:600; margin-bottom:4px;">{firma}</div>'
-                f'<div style="color:#FFFFFF; font-size:22px; font-weight:800;">{adet:,}</div>'
-                f'<div style="color:#66BB6A; font-size:11px;">adet</div>'
+    # Stok kartları — sadece stoku > 0 olan firmalar
+    firma_cards_list = []
+    for firma, adet in firma_st.items():
+        if adet > 0:
+            firma_cards_list.append(
+                f'<div style="background:rgba(27,90,42,0.3); border:1px solid rgba(102,187,106,0.2); border-radius:8px; padding:12px; text-align:center;">'
+                f'<div style="color:#81C784; font-size:10px; font-weight:600; margin-bottom:4px; letter-spacing:0.5px;">{firma}</div>'
+                f'<div style="color:#ECEFF1; font-size:22px; font-weight:800;">{adet:,}</div>'
+                f'<div style="color:#546E7A; font-size:10px;">adet</div>'
                 f'</div>'
-                for firma, adet in firma_st.items() if adet > 0
-            ])}
-            {"" if toplam_firma == 0 else ""}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+            )
+    firma_cards = "".join(firma_cards_list)
+    st.markdown(
+        f'<div style="background:rgba(255,255,255,0.04); border-radius:12px; padding:20px; margin-bottom:16px; border:1px solid rgba(255,255,255,0.08)">'
+        f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">'
+        f'<span style="color:#78909C; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1.5px;">STOK DAĞILIMI</span>'
+        f'<span style="color:#FFD54F; font-size:18px; font-weight:800;">{toplam:,} adet</span>'
+        f'</div>'
+        f'<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap:8px;">'
+        f'<div style="background:rgba(21,101,192,0.25); border:1px solid rgba(21,101,192,0.3); border-radius:8px; padding:12px; text-align:center;">'
+        f'<div style="color:#90CAF9; font-size:10px; font-weight:600; margin-bottom:4px; letter-spacing:0.5px;">G5F DEPO</div>'
+        f'<div style="color:#ECEFF1; font-size:22px; font-weight:800;">{bizim_stok:,}</div>'
+        f'<div style="color:#546E7A; font-size:10px;">adet</div></div>'
+        f'{firma_cards}'
+        f'</div></div>',
+        unsafe_allow_html=True
+    )
 
     # Fiyat ve karlılık kartı
     fob = secilen.get("fob_price") or secilen.get("son_fob") or 0
@@ -1623,19 +1637,25 @@ elif sayfa == "🛒  Satın Alma Geçmişi":
         st.stop()
 
     # Filtreler
-    fc1, fc2, fc3 = st.columns([2,2,1])
+    fc1, fc2, fc3, fc4 = st.columns([1, 2, 2, 1])
     with fc1:
+        sku_ara_sg = st.text_input("🔍 SKU Ara", placeholder="SKU yaz...", key="sg_sku_ara")
+    with fc2:
         try:
             urun_data_f = tum_urunler_listesi()
-            sku_filtre_options = ["Tüm Ürünler"] + [f"{u['sku']} — {u['urun_adi']}" for u in urun_data_f]
+            if sku_ara_sg:
+                filtre_urunler = [u for u in urun_data_f if sku_ara_sg.upper() in u["sku"].upper() or sku_ara_sg.lower() in u["urun_adi"].lower()]
+            else:
+                filtre_urunler = urun_data_f
+            sku_filtre_options = ["Tüm Ürünler"] + [f"{u['sku']} — {u['urun_adi']}" for u in filtre_urunler]
         except:
             sku_filtre_options = ["Tüm Ürünler"]
-        sku_filtre = st.selectbox("Ürün Filtresi", sku_filtre_options, key="sg_sku")
-    with fc2:
-        ted_filtre = st.text_input("Tedarikçi Ara...", key="sg_ted")
+        sku_filtre = st.selectbox("Ürün", sku_filtre_options, key="sg_sku", label_visibility="collapsed")
     with fc3:
+        ted_filtre = st.text_input("Tedarikçi Ara", placeholder="Tedarikçi adı...", key="sg_ted")
+    with fc4:
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🔄 Yenile", use_container_width=True):
+        if st.button("🔄", use_container_width=True, key="sg_yenile"):
             st.rerun()
 
     # Filtrele
@@ -1703,7 +1723,7 @@ elif sayfa == "🛒  Satın Alma Geçmişi":
         df_ted = pd.DataFrame([{"Tedarikçi":k,"Tutar ($)":v} for k,v in ted_tutar.items()])
         fig_ted = px.pie(df_ted, names="Tedarikçi", values="Tutar ($)",
                          title="Tedarikçi Bazında Cost Tutar Dağılımı",
-                         height=300, color_discrete_sequence=px.colors.qualitative.Set2)
+                         height=300, color_discrete_sequence=["#42A5F5","#66BB6A","#FFA726","#EF5350","#AB47BC","#26C6DA","#D4E157","#FF7043"])
         fig_ted.update_layout(paper_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(fig_ted, use_container_width=True)
 
