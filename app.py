@@ -290,70 +290,56 @@ if sayfa == "📊  Dashboard":
 
     # ACİL SİPARİŞ BANNER — şık tasarım
     if acil_urunler:
-        acil_items = ""
+        acil_items_list = []
         for u in acil_urunler:
             gun = u.get('stok_bitis_gun', '?')
             toplam = u.get('toplam_stok', u.get('bizim_stok', 0))
-            acil_items += f"""
-            <div style="display:flex; justify-content:space-between; align-items:center;
-                        padding:8px 12px; margin:4px 0; border-radius:6px;
-                        background:rgba(255,255,255,0.08);">
-              <span style="color:#FFCDD2; font-weight:600; font-size:13px;">
-                ⚡ {u['urun_adi'][:60]}{'...' if len(u['urun_adi']) > 60 else ''}
-              </span>
-              <div style="display:flex; gap:16px; flex-shrink:0; margin-left:12px;">
-                <span style="color:#EF9A9A; font-size:12px;">📦 {toplam:,} adet</span>
-                <span style="color:#FF8A80; font-size:12px; font-weight:700;">{gun} günde biter</span>
-              </div>
-            </div>"""
-
-        st.markdown(f"""
-        <div style="background:#7F0000; border-radius:12px; padding:16px 20px; margin:12px 0;
-                    border:1px solid #FF5252;">
-          <div style="display:flex; align-items:center; margin-bottom:12px;">
-            <span style="font-size:18px; font-weight:800; color:#FFCDD2;">
-              🚨 ACİL SİPARİŞ GEREKİYOR!
-            </span>
-            <span style="background:#FF5252; color:white; padding:2px 10px; border-radius:20px;
-                        font-size:13px; font-weight:700; margin-left:12px;">
-              {len(acil_urunler)} ürün
-            </span>
-          </div>
-          {acil_items}
-        </div>
-        """, unsafe_allow_html=True)
+            ad = u['urun_adi']
+            ad_kisalt = (ad[:60] + '...') if len(ad) > 60 else ad
+            acil_items_list.append(
+                f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                f'padding:8px 12px;margin:4px 0;border-radius:6px;background:rgba(255,255,255,0.08);">'
+                f'<span style="color:#FFCDD2;font-weight:600;font-size:13px;">⚡ {ad_kisalt}</span>'
+                f'<div style="display:flex;gap:16px;flex-shrink:0;margin-left:12px;">'
+                f'<span style="color:#EF9A9A;font-size:12px;">📦 {toplam:,} adet</span>'
+                f'<span style="color:#FF8A80;font-size:12px;font-weight:700;">{gun} günde biter</span>'
+                f'</div></div>'
+            )
+        acil_items = "".join(acil_items_list)
+        st.markdown(
+            f'<div style="background:#7F0000;border-radius:12px;padding:16px 20px;margin:12px 0;border:1px solid #FF5252;">'
+            f'<div style="display:flex;align-items:center;margin-bottom:12px;">'
+            f'<span style="font-size:18px;font-weight:800;color:#FFCDD2;">🚨 ACİL SİPARİŞ GEREKİYOR!</span>'
+            f'<span style="background:#FF5252;color:white;padding:2px 10px;border-radius:20px;'
+            f'font-size:13px;font-weight:700;margin-left:12px;">{len(acil_urunler)} ürün</span>'
+            f'</div>{acil_items}</div>',
+            unsafe_allow_html=True
+        )
 
     if yaklasan_urunler:
-        yak_items = ""
+        yak_items_list = []
         for u in yaklasan_urunler[:5]:
             gun = u.get('siparis_son_gun', u.get('stok_bitis_gun', '?'))
-            yak_items += f"""
-            <div style="display:flex; justify-content:space-between; align-items:center;
-                        padding:6px 12px; margin:3px 0; border-radius:6px;
-                        background:rgba(255,255,255,0.06);">
-              <span style="color:#FFE0B2; font-size:13px;">
-                📌 {u['urun_adi'][:55]}{'...' if len(u['urun_adi']) > 55 else ''}
-              </span>
-              <span style="color:#FFCC02; font-size:12px; font-weight:600; flex-shrink:0; margin-left:12px;">
-                {gun} gün içinde sipariş ver
-              </span>
-            </div>"""
-        kalan = f" <span style='color:#FFB74D; font-size:12px;'>+ {len(yaklasan_urunler)-5} ürün daha</span>" if len(yaklasan_urunler) > 5 else ""
-        st.markdown(f"""
-        <div style="background:#BF360C; border-radius:12px; padding:14px 20px; margin:8px 0;
-                    border:1px solid #FF6E40;">
-          <div style="display:flex; align-items:center; margin-bottom:10px;">
-            <span style="font-size:15px; font-weight:700; color:#FFE0B2;">
-              ⚠️ 30 Gün İçinde Sipariş Verilmeli
-            </span>
-            <span style="background:#FF6E40; color:white; padding:2px 8px; border-radius:20px;
-                        font-size:12px; font-weight:700; margin-left:10px;">
-              {len(yaklasan_urunler)} ürün
-            </span>{kalan}
-          </div>
-          {yak_items}
-        </div>
-        """, unsafe_allow_html=True)
+            ad = u['urun_adi']
+            ad_kisalt = (ad[:55] + '...') if len(ad) > 55 else ad
+            yak_items_list.append(
+                f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                f'padding:6px 12px;margin:3px 0;border-radius:6px;background:rgba(255,255,255,0.06);">'
+                f'<span style="color:#FFE0B2;font-size:13px;">📌 {ad_kisalt}</span>'
+                f'<span style="color:#FFCC02;font-size:12px;font-weight:600;flex-shrink:0;margin-left:12px;">'
+                f'{gun}g içinde sipariş</span></div>'
+            )
+        yak_items = "".join(yak_items_list)
+        kalan = f'<span style="color:#FFB74D;font-size:12px;"> + {len(yaklasan_urunler)-5} ürün daha</span>' if len(yaklasan_urunler) > 5 else ""
+        st.markdown(
+            f'<div style="background:#BF360C;border-radius:12px;padding:14px 20px;margin:8px 0;border:1px solid #FF6E40;">'
+            f'<div style="display:flex;align-items:center;margin-bottom:10px;">'
+            f'<span style="font-size:15px;font-weight:700;color:#FFE0B2;">⚠️ 30 Gün İçinde Sipariş Verilmeli</span>'
+            f'<span style="background:#FF6E40;color:white;padding:2px 8px;border-radius:20px;'
+            f'font-size:12px;font-weight:700;margin-left:10px;">{len(yaklasan_urunler)} ürün</span>{kalan}'
+            f'</div>{yak_items}</div>',
+            unsafe_allow_html=True
+        )
 
     # Tarayıcı bildirimi (JS)
     if acil_urunler:
