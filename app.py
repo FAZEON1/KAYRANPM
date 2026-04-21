@@ -346,7 +346,7 @@ if sayfa == "📊  Dashboard":
                 "Ürün Adı": urun["urun_adi"],
                 "Kategori": urun["kategori"],
                 "Bizim Stok": urun["bizim_stok"],
-                "Ort. Hft. Satış": urun.get("ortalama_haftalik_satis", 0),
+                "Ort. Hft. Satış": round(urun.get("ortalama_haftalik_satis", 0)),
                 "Satış Trendi": urun.get("trend_mesaji", "—"),
                 "Trend Yön": urun.get("trend_yon", "yetersiz_veri"),
                 "📋 Sipariş Takvimi": urun.get("siparis_mesaj", "—"),
@@ -631,7 +631,7 @@ elif sayfa == "🔍  Ürün Detay":
     # Üst bilgi kartları
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("📦 Bizim Stok", urun["bizim_stok"])
-    c2.metric("📊 Ort. Hft. Satış", urun.get("ortalama_haftalik_satis", 0))
+    c2.metric("📊 Ort. Hft. Satış", round(urun.get("ortalama_haftalik_satis", 0)))
     c3.metric("⚡ Risk Skoru", f"{urun.get('risk_skor',0)}/100")
     c4.metric("📅 Stok Biter", f"{urun.get('stok_bitis_gun','-')} gün")
     c5.metric("📦 Sipariş Önerisi", f"{urun.get('oneri_miktar',0)} adet")
@@ -871,7 +871,7 @@ elif sayfa == "📈  Genel Analiz":
                     "Ürün Adı": u["urun_adi"],
                     "Kategori": u.get("kategori",""),
                     "Bizim Stok": u["bizim_stok"],
-                    "Ort. Hft. Satış": round(u.get("ortalama_haftalik_satis", 0), 1),
+                    "Ort. Hft. Satış": round(u.get("ortalama_haftalik_satis", 0)),
                     "Stok Biter (Gün)": u.get("stok_bitis_gun", "-"),
                     "Sipariş Durumu": u.get("siparis_mesaj",""),
                     "Önerilen Miktar": u.get("oneri_miktar", 0),
