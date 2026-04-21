@@ -80,6 +80,7 @@ def sil_urun(sku):
                   "yoldaki_urunler", "stok_yas", "siparis_onerileri"]:
         sb.table(tablo).delete().eq("sku", sku).execute()
 
+@st.cache_data(ttl=300, show_spinner=False)
 def get_tum_sku_listesi():
     return _rows(get_client().table("urunler").select("sku, urun_adi").order("sku").execute())
 
@@ -104,6 +105,7 @@ def upsert_yoldaki_urun(sku, urun_adi, yoldaki_miktar, tahmini_varis_tarihi, yol
         "yukleme_tarihi": get_today(),
     }, on_conflict="sku").execute()
 
+@st.cache_data(ttl=300, show_spinner=False)
 def get_yoldaki_urunler():
     rows = _rows(get_client().table("yoldaki_urunler").select("*").execute())
     return {r["sku"]: r for r in rows}
@@ -120,6 +122,7 @@ def ekle_satin_alma(sku, urun_adi, tedarikci, tarih, adet, alis_fiyati, maliyet_
         "toplam_maliyet": toplam_birim * int(adet or 0),
         "notlar": notlar or "", "kayit_tarihi": get_today(),
     }).execute()
+    st.cache_data.clear()
 
 def guncelle_satin_alma(kayit_id, tedarikci, tarih, adet, alis_fiyati, maliyet_yuzdesi, notlar=""):
     toplam_birim = float(alis_fiyati or 0) * (1 + float(maliyet_yuzdesi or 0) / 100)
@@ -133,7 +136,9 @@ def guncelle_satin_alma(kayit_id, tedarikci, tarih, adet, alis_fiyati, maliyet_y
 
 def sil_satin_alma(kayit_id):
     get_client().table("satin_alma_gecmisi").delete().eq("id", kayit_id).execute()
+    st.cache_data.clear()
 
+@st.cache_data(ttl=120, show_spinner=False)
 def get_satin_alma_gecmisi(sku=None):
     sb = get_client()
     q = sb.table("satin_alma_gecmisi").select("*").order("satin_alma_tarihi", desc=True)
@@ -170,6 +175,7 @@ def get_satin_alma_ozet(sku=None):
             result.append({"sku": s, "siparis_sayisi": len(grup), "toplam_adet": toplam_adet, "ort_maliyet": ort_maliyet})
         return result
 
+@st.cache_data(ttl=300, show_spinner=False)
 def get_tum_tedarikciler():
     rows = _rows(get_client().table("satin_alma_gecmisi").select("tedarikci").execute())
     return list(set(r["tedarikci"] for r in rows if r.get("tedarikci")))
@@ -183,6 +189,7 @@ def ekle_siparis_onerisi(firma, sku, urun_adi, miktar):
         "durum": "bekliyor", "olusturma_tarihi": get_today(),
     }).execute()
 
+@st.cache_data(ttl=120, show_spinner=False)
 def get_siparis_onerileri():
     return _rows(get_client().table("siparis_onerileri").select("*").order("olusturma_tarihi", desc=True).execute())
 
@@ -207,6 +214,7 @@ def ekle_kampanya(kampanya_adi, firma, baslangic, bitis, notlar=""):
     }).execute()
     return r.data[0]["id"] if r.data else None
 
+@st.cache_data(ttl=120, show_spinner=False)
 def get_kampanyalar(durum=None):
     sb = get_client()
     q = sb.table("kampanyalar").select("*").order("olusturma_tarihi", desc=True)
@@ -226,6 +234,7 @@ def guncelle_kampanya(kampanya_id, kampanya_adi, firma, baslangic, bitis, notlar
 
 def kapat_kampanya(kampanya_id):
     get_client().table("kampanyalar").update({"durum": "kapali"}).eq("id", kampanya_id).execute()
+    st.cache_data.clear()
 
 def sil_kampanya(kampanya_id):
     sb = get_client()
@@ -243,6 +252,7 @@ def ekle_kampanya_urun(kampanya_id, sku, urun_adi, pacal_maliyet, satis_fiyati,
         "satilan_adet": 0, "notlar": notlar or "",
     }).execute()
 
+@st.cache_data(ttl=120, show_spinner=False)
 def get_kampanya_urunler(kampanya_id):
     return _rows(get_client().table("kampanya_urunler").select("*").eq("kampanya_id", kampanya_id).order("id").execute())
 
@@ -254,6 +264,7 @@ def guncelle_kampanya_urun(urun_id, satis_fiyati, birim_firma_destek, birim_ek_d
         "satilan_adet": int(satilan_adet or 0),
         "notlar": notlar or "",
     }).eq("id", urun_id).execute()
+    st.cache_data.clear()
 
 def sil_kampanya_urun(urun_id):
     get_client().table("kampanya_urunler").delete().eq("id", urun_id).execute()
