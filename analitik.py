@@ -557,7 +557,7 @@ def siparis_onerisi_listesi():
     siparis_son_gun = stok_bitis_gun - URETIM_SURESI_GUN
 
     if siparis_son_gun <= 0:
-        return stok_bitis_gun, siparis_son_gun, "acil", f"🔴 ACİL SİPARİŞ VER! (Stok {stok_bitis_gun}g'de biter)"
+        return stok_bitis_gun, siparis_son_gun, "acil", f"ACİL — {stok_bitis_gun}g'de biter"
     elif siparis_son_gun <= 30:
         return stok_bitis_gun, siparis_son_gun, "yaklasıyor", f"🟠 {siparis_son_gun} gün içinde sipariş ver"
     elif siparis_son_gun <= 60:
@@ -569,18 +569,18 @@ def siparis_onerisi_listesi():
 def siparis_takvimi_hesapla(bizim_stok, toplam_haftalik_satis):
     """135 gün üretim süresi baz alınarak sipariş takvimi hesaplar."""
     if not toplam_haftalik_satis or toplam_haftalik_satis == 0:
-        return None, None, "veri_yok", "⚪ Satış verisi yok"
+        return None, None, "veri_yok", "Satış verisi yok"
     gunluk_satis = toplam_haftalik_satis / 7
     stok_bitis_gun = int(bizim_stok / gunluk_satis) if gunluk_satis > 0 else 0
     siparis_son_gun = stok_bitis_gun - URETIM_SURESI_GUN
     if siparis_son_gun <= 0:
-        return stok_bitis_gun, siparis_son_gun, "acil", f"🔴 ACİL SİPARİŞ VER! (Stok {stok_bitis_gun}g'de biter)"
+        return stok_bitis_gun, siparis_son_gun, "acil", f"ACİL — {stok_bitis_gun}g'de biter"
     elif siparis_son_gun <= 30:
-        return stok_bitis_gun, siparis_son_gun, "yaklasıyor", f"🟠 {siparis_son_gun} gün içinde sipariş ver"
+        return stok_bitis_gun, siparis_son_gun, "yaklasıyor", f"{siparis_son_gun}g içinde sipariş"
     elif siparis_son_gun <= 60:
-        return stok_bitis_gun, siparis_son_gun, "planlama", f"🟡 {siparis_son_gun} gün içinde sipariş ver"
+        return stok_bitis_gun, siparis_son_gun, "planlama", f"{siparis_son_gun}g sonra sipariş"
     else:
-        return stok_bitis_gun, siparis_son_gun, "normal", f"🟢 {siparis_son_gun} gün sonra sipariş ver"
+        return stok_bitis_gun, siparis_son_gun, "normal", f"✅ {siparis_son_gun}g sonra sipariş"
 
 
 def siparis_uyarisi_kontrol(sku, firma, firma_data, bizim_stok):

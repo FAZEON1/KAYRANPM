@@ -276,24 +276,84 @@ if sayfa == "📊  Dashboard":
 
     # İstatistik kartları
     toplam_sku = len(set(u["sku"] for u in veri))
-    uyari_sayisi = sum(1 for u, fd in gosterilecek if fd["siparis_uyarisi"])
-    kritik_sayisi = sum(1 for u in veri if u["stok_renk"] == "kirmizi")
-    muadil_sayisi = 0
+    acil_urunler = [u for u in veri if u.get("siparis_durum") == "acil"]
+    yaklasan_urunler = [u for u in veri if u.get("siparis_durum") == "yaklasıyor"]
+    planlama_urunler = [u for u in veri if u.get("siparis_durum") == "planlama"]
+    uyari_sayisi = sum(1 for u, fd in gosterilecek if fd.get("siparis_uyarisi"))
+    kritik_sayisi = sum(1 for u in veri if u.get("stok_renk") == "kirmizi")
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("📦 Toplam Ürün", toplam_sku)
-    m2.metric("⚠️ Sipariş Gerekli", uyari_sayisi, delta="Acil" if uyari_sayisi > 0 else None, delta_color="inverse")
-    m3.metric("🔴 Kritik Stok (90g+)", kritik_sayisi, delta="Dikkat" if kritik_sayisi > 0 else None, delta_color="inverse")
+    m2.metric("🔴 Acil Sipariş", len(acil_urunler))
+    m3.metric("🟠 Yaklaşıyor", len(yaklasan_urunler))
+    m4.metric("🟡 Planlama", len(planlama_urunler))
 
-    # ACİL SİPARİŞ BANNER
-    acil_urunler = [u for u in veri if u.get("siparis_durum") == "acil"]
-    yaklasan_urunler = [u for u in veri if u.get("siparis_durum") == "yaklasıyor"]
+    # ACİL SİPARİŞ BANNER — şık tasarım
     if acil_urunler:
-        acil_satirlar = "\n".join(f"- **{u['urun_adi']}** (toplam stok: {u.get('toplam_stok', u['bizim_stok'])} adet, {u.get('stok_bitis_gun','?')} günde biter)" for u in acil_urunler)
-        st.error(f"🚨 **ACİL SİPARİŞ GEREKİYOR!** {len(acil_urunler)} ürün için stok 135 günden az:\n\n{acil_satirlar}")
+        acil_items = ""
+        for u in acil_urunler:
+            gun = u.get('stok_bitis_gun', '?')
+            toplam = u.get('toplam_stok', u.get('bizim_stok', 0))
+            acil_items += f"""
+            <div style="display:flex; justify-content:space-between; align-items:center;
+                        padding:8px 12px; margin:4px 0; border-radius:6px;
+                        background:rgba(255,255,255,0.08);">
+              <span style="color:#FFCDD2; font-weight:600; font-size:13px;">
+                ⚡ {u['urun_adi'][:60]}{'...' if len(u['urun_adi']) > 60 else ''}
+              </span>
+              <div style="display:flex; gap:16px; flex-shrink:0; margin-left:12px;">
+                <span style="color:#EF9A9A; font-size:12px;">📦 {toplam:,} adet</span>
+                <span style="color:#FF8A80; font-size:12px; font-weight:700;">{gun} günde biter</span>
+              </div>
+            </div>"""
+
+        st.markdown(f"""
+        <div style="background:#7F0000; border-radius:12px; padding:16px 20px; margin:12px 0;
+                    border:1px solid #FF5252;">
+          <div style="display:flex; align-items:center; margin-bottom:12px;">
+            <span style="font-size:18px; font-weight:800; color:#FFCDD2;">
+              🚨 ACİL SİPARİŞ GEREKİYOR!
+            </span>
+            <span style="background:#FF5252; color:white; padding:2px 10px; border-radius:20px;
+                        font-size:13px; font-weight:700; margin-left:12px;">
+              {len(acil_urunler)} ürün
+            </span>
+          </div>
+          {acil_items}
+        </div>
+        """, unsafe_allow_html=True)
+
     if yaklasan_urunler:
-        yak_isimler = ", ".join(u['urun_adi'] for u in yaklasan_urunler[:3])
-        st.warning(f"⚠️ **30 gün içinde sipariş verilmeli:** {yak_isimler}" + (f" ve {len(yaklasan_urunler)-3} ürün daha" if len(yaklasan_urunler) > 3 else ""))
+        yak_items = ""
+        for u in yaklasan_urunler[:5]:
+            gun = u.get('siparis_son_gun', u.get('stok_bitis_gun', '?'))
+            yak_items += f"""
+            <div style="display:flex; justify-content:space-between; align-items:center;
+                        padding:6px 12px; margin:3px 0; border-radius:6px;
+                        background:rgba(255,255,255,0.06);">
+              <span style="color:#FFE0B2; font-size:13px;">
+                📌 {u['urun_adi'][:55]}{'...' if len(u['urun_adi']) > 55 else ''}
+              </span>
+              <span style="color:#FFCC02; font-size:12px; font-weight:600; flex-shrink:0; margin-left:12px;">
+                {gun} gün içinde sipariş ver
+              </span>
+            </div>"""
+        kalan = f" <span style='color:#FFB74D; font-size:12px;'>+ {len(yaklasan_urunler)-5} ürün daha</span>" if len(yaklasan_urunler) > 5 else ""
+        st.markdown(f"""
+        <div style="background:#BF360C; border-radius:12px; padding:14px 20px; margin:8px 0;
+                    border:1px solid #FF6E40;">
+          <div style="display:flex; align-items:center; margin-bottom:10px;">
+            <span style="font-size:15px; font-weight:700; color:#FFE0B2;">
+              ⚠️ 30 Gün İçinde Sipariş Verilmeli
+            </span>
+            <span style="background:#FF6E40; color:white; padding:2px 8px; border-radius:20px;
+                        font-size:12px; font-weight:700; margin-left:10px;">
+              {len(yaklasan_urunler)} ürün
+            </span>{kalan}
+          </div>
+          {yak_items}
+        </div>
+        """, unsafe_allow_html=True)
 
     # Tarayıcı bildirimi (JS)
     if acil_urunler:
@@ -448,14 +508,21 @@ if sayfa == "📊  Dashboard":
                         styles[cols.index("Uyarı")] = "background-color:#7F0000; color:#FFCDD2; font-weight:700"
                 return styles
 
-            goster = ["SKU","Ürün Adı","Kategori","Bizim Stok","Toplam Stok","Ort. Hft. Satış","Satış Trendi",
-                      "📋 Sipariş Takvimi","📦 Önerilen Sipariş","⚡ Risk Skoru","🪦 Stok Durumu",
-                      "Firma","Firma Stok","Haftalık Satış","Stok Yaşı","Performans",
-                      "Yoldaki Durum","Stok Yayılımı","Uyarı"]
+            # Daha temiz ve okunabilir kolon sırası
+            goster = [
+                "SKU", "Ürün Adı", "Kategori",
+                "Toplam Stok", "Bizim Stok",
+                "Firma", "Firma Stok", "Ort. Hft. Satış",
+                "Satış Trendi", "Stok Yaşı",
+                "📋 Sipariş Takvimi", "📦 Önerilen Sipariş",
+                "⚡ Risk Skoru", "Yoldaki Durum",
+            ]
             gizli = [k for k in ["Stok Renk","Yol Renk","Sipariş Durum","Trend Yön","Risk Etiketi","Ölü Durum"] if k in df_goster.columns]
-            styled = df_goster[goster + gizli].style.apply(satir_rengi, axis=1)
+            # Sadece mevcut kolonları göster
+            goster_mevcut = [g for g in goster if g in df_goster.columns]
+            styled = df_goster[goster_mevcut + gizli].style.apply(satir_rengi, axis=1)
             styled = styled.hide(axis="columns", subset=gizli)
-            st.dataframe(styled, use_container_width=True, height=480)
+            st.dataframe(styled, use_container_width=True, height=500)
 
         tab1, tab2, tab3, tab4 = st.tabs(["⚡ En Riskli","📈 En Çok Satan","📉 En Az Satan","🕐 Stok Yaşına Göre"])
         with tab1:
@@ -2184,3 +2251,4 @@ elif sayfa == "🔔  Bildirim Ayarları":
         st.dataframe(df_ozet.style.apply(ozet_rengi, axis=1), use_container_width=True, height=400)
     except Exception as e:
         st.error(f"Veri yüklenemedi: {e}")
+
