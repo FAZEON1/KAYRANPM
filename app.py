@@ -17,7 +17,8 @@ from database import (initialize_db, onayla_siparis, reddet_siparis,
                       guncelle_kampanya, kapat_kampanya, sil_kampanya,
                       ekle_kampanya_urun, get_kampanya_urunler,
                       guncelle_kampanya_urun, sil_kampanya_urun,
-                      sil_urun, get_tum_sku_listesi, get_client)
+                      sil_urun, get_tum_sku_listesi, get_client,
+                      get_gecmis_satis_tum_firmalar)
 from analitik import dashboard_hesapla, genel_analiz_hesapla, tum_urunler_listesi, siparis_onerisi_listesi
 from excel_islemler import (excel_yukle_ana_stok, excel_yukle_firma_stoklari,
                             excel_yukle_yoldaki_urunler, create_sample_excel_bytes)
@@ -288,7 +289,7 @@ if sayfa == "📊  Dashboard":
     acil_urunler = [u for u in veri if u.get("siparis_durum") == "acil"]
     yaklasan_urunler = [u for u in veri if u.get("siparis_durum") == "yaklasıyor"]
     if acil_urunler:
-        acil_satirlar = "\n".join(f"- **{u['urun_adi']}** (stok: {u['bizim_stok']} adet, {u.get('stok_bitis_gun','?')} günde biter)" for u in acil_urunler)
+        acil_satirlar = "\n".join(f"- **{u['urun_adi']}** (toplam stok: {u.get('toplam_stok', u['bizim_stok'])} adet, {u.get('stok_bitis_gun','?')} günde biter)" for u in acil_urunler)
         st.error(f"🚨 **ACİL SİPARİŞ GEREKİYOR!** {len(acil_urunler)} ürün için stok 135 günden az:\n\n{acil_satirlar}")
     if yaklasan_urunler:
         yak_isimler = ", ".join(u['urun_adi'] for u in yaklasan_urunler[:3])
@@ -346,6 +347,7 @@ if sayfa == "📊  Dashboard":
                 "Ürün Adı": urun["urun_adi"],
                 "Kategori": urun["kategori"],
                 "Bizim Stok": urun["bizim_stok"],
+                "Toplam Stok": urun.get("toplam_stok", urun["bizim_stok"]),
                 "Ort. Hft. Satış": round(urun.get("ortalama_haftalik_satis", 0)),
                 "Satış Trendi": urun.get("trend_mesaji", "—"),
                 "Trend Yön": urun.get("trend_yon", "yetersiz_veri"),
@@ -446,7 +448,7 @@ if sayfa == "📊  Dashboard":
                         styles[cols.index("Uyarı")] = "background-color:#7F0000; color:#FFCDD2; font-weight:700"
                 return styles
 
-            goster = ["SKU","Ürün Adı","Kategori","Bizim Stok","Ort. Hft. Satış","Satış Trendi",
+            goster = ["SKU","Ürün Adı","Kategori","Bizim Stok","Toplam Stok","Ort. Hft. Satış","Satış Trendi",
                       "📋 Sipariş Takvimi","📦 Önerilen Sipariş","⚡ Risk Skoru","🪦 Stok Durumu",
                       "Firma","Firma Stok","Haftalık Satış","Stok Yaşı","Performans",
                       "Yoldaki Durum","Stok Yayılımı","Uyarı"]
@@ -633,7 +635,9 @@ elif sayfa == "🔍  Ürün Detay":
     c1.metric("📦 Bizim Stok", urun["bizim_stok"])
     c2.metric("📊 Ort. Hft. Satış", round(urun.get("ortalama_haftalik_satis", 0)))
     c3.metric("⚡ Risk Skoru", f"{urun.get('risk_skor',0)}/100")
-    c4.metric("📅 Stok Biter", f"{urun.get('stok_bitis_gun','-')} gün")
+    stok_bitis = urun.get('stok_bitis_gun')
+    stok_bitis_str = f"{stok_bitis} gün" if stok_bitis is not None and stok_bitis != 0 else "Satış verisi yok"
+    c4.metric("📅 Stok Biter", stok_bitis_str)
     c5.metric("📦 Sipariş Önerisi", f"{urun.get('oneri_miktar',0)} adet")
 
     # Sipariş durumu banner
@@ -651,7 +655,7 @@ elif sayfa == "🔍  Ürün Detay":
     st.markdown("---")
 
     # Geçmiş satış verileri
-    gecmis_raw = get_gecmis_satis_firma_bazli(secilen_sku)
+    gecmis_raw = get_gecmis_satis_tum_firmalar(secilen_sku)
 
     if not gecmis_raw:
         st.info("Bu ürün için henüz geçmiş satış verisi bulunmuyor. Haftalık veri yükledikçe grafikler oluşacak.")
@@ -2179,3 +2183,4 @@ elif sayfa == "🔔  Bildirim Ayarları":
         st.dataframe(df_ozet.style.apply(ozet_rengi, axis=1), use_container_width=True, height=400)
     except Exception as e:
         st.error(f"Veri yüklenemedi: {e}")
+

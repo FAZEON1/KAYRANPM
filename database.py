@@ -293,3 +293,11 @@ def get_muadil_oneriler(sku, kategori, marka, fiyat):
 
 def get_connection():
     return None
+
+def get_gecmis_satis_tum_firmalar(sku):
+    """Bir SKU için tüm firmaların geçmiş satış verilerini döndürür"""
+    rows = _rows(get_client().table("firma_stok")
+                .select("firma, haftalik_satis, stok_miktari, yukleme_tarihi")
+                .eq("sku", sku)
+                .order("yukleme_tarihi").execute())
+    return rows

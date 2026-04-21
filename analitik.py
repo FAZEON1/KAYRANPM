@@ -630,6 +630,13 @@ def dashboard_hesapla():
         trendyol_stok = urun.get("trendyol_stok", 0) or 0
         kategori = urun.get("kategori", "")
 
+        # Firma stok toplamı
+        toplam_firma_stok = sum(
+            (firma_data.get(f, {}).get(sku, {}) or {}).get("stok_miktari", 0) or 0
+            for f in FIRMA_LISTESI
+        )
+        toplam_stok = bizim_stok + toplam_firma_stok
+
         # Stok yaşı
         ilk_tarih = stok_yas_map.get(sku) or urun.get("ilk_giris_tarihi", "")
         stok_gun, stok_renk = stok_yasi_hesapla(ilk_tarih)
@@ -652,8 +659,8 @@ def dashboard_hesapla():
                 satis_karsilastirma.append((firma, f_satis))
                 continue
 
-            gun_sayisi, gun_renk = kac_gunluk_satis(bizim_stok, f_satis)
-            uyari = siparis_uyarisi_kontrol(sku, firma, firma_data, bizim_stok)
+            gun_sayisi, gun_renk = kac_gunluk_satis(toplam_stok, f_satis)
+            uyari = siparis_uyarisi_kontrol(sku, firma, firma_data, toplam_stok)
             muadil_gerekli = False
             satis_karsilastirma.append((firma, f_satis))
 
@@ -687,20 +694,20 @@ def dashboard_hesapla():
         yol = yoldaki_data.get(sku, {})
         yoldaki_miktar = yol.get("yoldaki_miktar", 0) or 0
 
-        # Sipariş takvimi
+        # Sipariş takvimi — TOPLAM STOK baz alınır
         stok_bitis_gun, siparis_son_gun, siparis_durum, siparis_mesaj = siparis_takvimi_hesapla(
-            bizim_stok, ortalama_satis if ortalama_satis > 0 else toplam_satis
+            toplam_stok, ortalama_satis if ortalama_satis > 0 else toplam_satis
         )
 
-        # Sipariş miktarı önerisi
+        # Sipariş miktarı önerisi — TOPLAM STOK baz alınır
         oneri_miktar, oneri_mesaj = siparis_miktari_oneri(
-            bizim_stok, ortalama_satis if ortalama_satis > 0 else toplam_satis,
+            toplam_stok, ortalama_satis if ortalama_satis > 0 else toplam_satis,
             trend_yon, trend_yuzdesi, yoldaki_miktar
         )
 
-        # Risk skoru
+        # Risk skoru — TOPLAM STOK baz alınır
         risk_skor, risk_etiketi = risk_skoru_hesapla(
-            bizim_stok, ortalama_satis if ortalama_satis > 0 else toplam_satis,
+            toplam_stok, ortalama_satis if ortalama_satis > 0 else toplam_satis,
             stok_gun, siparis_son_gun, trend_yon
         )
 
@@ -723,6 +730,8 @@ def dashboard_hesapla():
             "kategori": kategori,
             "marka": urun.get("marka", ""),
             "bizim_stok": bizim_stok,
+            "toplam_stok": toplam_stok,
+            "toplam_firma_stok": toplam_firma_stok,
             "trendyol_stok": trendyol_stok,
             "stok_gun": stok_gun,
             "stok_renk": stok_renk,
