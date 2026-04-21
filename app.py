@@ -1154,7 +1154,12 @@ elif sayfa == "📋  Tüm Ürünler":
                 st.success(f"✅ **{sku_temiz}** — {m_urun_adi.strip()} eklendi!")
                 st.rerun()
 
-
+    # Ürün verilerini yükle
+    try:
+        urun_data = tum_urunler_listesi()
+    except Exception as e:
+        st.error(f"Veri yüklenemedi: {e}")
+        st.stop()
 
     if not urun_data:
         st.info("Henüz ürün yüklenmemiş. 'Veri Yükleme' sekmesinden G5F STOK dosyasını yükleyin.")
