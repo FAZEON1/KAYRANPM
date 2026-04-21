@@ -1324,6 +1324,7 @@ elif sayfa == "📋  Tüm Ürünler":
                     st.rerun()
 
 
+elif sayfa == "🛒  Satın Alma Geçmişi":
     st.markdown('<div class="baslik">🛒 Satın Alma Geçmişi</div>', unsafe_allow_html=True)
     st.markdown('<div class="alt-baslik">Tüm ürünlerin satın alma kayıtları — tarih, tedarikçi, FOB, Cost Price</div>', unsafe_allow_html=True)
 
@@ -2183,4 +2184,3 @@ elif sayfa == "🔔  Bildirim Ayarları":
         st.dataframe(df_ozet.style.apply(ozet_rengi, axis=1), use_container_width=True, height=400)
     except Exception as e:
         st.error(f"Veri yüklenemedi: {e}")
-
