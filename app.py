@@ -2035,6 +2035,9 @@ elif sayfa == "📂  Veri Yükleme":
 
             os.unlink(tmp_path)
 
+            # Cache temizle — yeni veri yüklendiğinde eski cache geçersiz
+            st.cache_data.clear()
+
             for baslik, basari, mesaj in sonuclar:
                 if basari:
                     st.success(f"**{baslik}:** {mesaj}")

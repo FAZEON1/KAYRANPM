@@ -48,6 +48,7 @@ def upsert_urun(sku, urun_adi, kategori="", marka="", satis_fiyati=0.0,
         {"sku": sku, "ilk_gorulen_tarih": bugun}, on_conflict="sku"
     ).execute()
 
+@st.cache_data(ttl=300, show_spinner=False)
 def get_all_dashboard_data():
     sb = get_client()
     urunler = _rows(sb.table("urunler").select("*").order("urun_adi").execute())

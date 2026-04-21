@@ -1,4 +1,5 @@
 from datetime import datetime, date
+import streamlit as st
 from database import (get_all_dashboard_data, get_muadil_oneriler,
                       ekle_siparis_onerisi, get_yoldaki_urunler,
                       get_tum_gecmis_satislar, get_gecmis_satis_firma_bazli,
@@ -354,6 +355,7 @@ def olu_stok_tespiti(sku, bizim_stok, gecmis_satislar, stok_gun):
         return "normal", ""
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def genel_analiz_hesapla():
     """
     Kategori ve marka bazında özet analiz döndürür.
@@ -424,12 +426,35 @@ def genel_analiz_hesapla():
     }
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def tum_urunler_listesi():
     """Tüm ürünlerin stok, fiyat ve FINAL COST PRICE hesabını döndürür."""
     sb = get_client()
     urunler = sb.table("urunler").select("*").order("urun_adi").execute().data or []
 
     FIRMALAR = ["ITOPYA", "HB", "VATAN", "MONDAY", "KANAL", "DIGER"]
+
+    # Toplu sorgular — her ürün için ayrı sorgu yerine tek seferde çek
+    # Tüm firma stoklarını tek sorguda al (en son tarih bazında)
+    tum_firma_rows = sb.table("firma_stok").select("firma, sku, stok_miktari, yukleme_tarihi").execute().data or []
+
+    # Her firma+sku için en son tarihin stok miktarını bul
+    firma_stok_map = {}  # (firma, sku) -> stok_miktari
+    tarih_map = {}  # (firma, sku) -> en_son_tarih
+    for r in tum_firma_rows:
+        key = (r["firma"], r["sku"])
+        if key not in tarih_map or r["yukleme_tarihi"] > tarih_map[key]:
+            tarih_map[key] = r["yukleme_tarihi"]
+            firma_stok_map[key] = r["stok_miktari"] or 0
+
+    # Tüm satın alma geçmişini tek sorguda al
+    tum_kayitlar = sb.table("satin_alma_gecmisi").select("*").order("satin_alma_tarihi", desc=True).execute().data or []
+    kayit_map = {}  # sku -> [kayitlar]
+    for k in tum_kayitlar:
+        s = k["sku"]
+        if s not in kayit_map:
+            kayit_map[s] = []
+        kayit_map[s].append(k)
 
     sonuclar = []
     for u in urunler:
@@ -438,18 +463,11 @@ def tum_urunler_listesi():
         hedef_marj = u.get("hedef_kar_marji") or 0
         bizim_stok = u.get("bizim_stok") or 0
 
-        # Firma stoklarını çek
-        firma_stoklari = {}
-        for firma in FIRMALAR:
-            son_t = sb.table("firma_stok").select("yukleme_tarihi").eq("firma", firma).eq("sku", sku).order("yukleme_tarihi", desc=True).limit(1).execute().data
-            if son_t:
-                r = sb.table("firma_stok").select("stok_miktari").eq("firma", firma).eq("sku", sku).eq("yukleme_tarihi", son_t[0]["yukleme_tarihi"]).execute().data
-                firma_stoklari[firma] = r[0]["stok_miktari"] if r else 0
-            else:
-                firma_stoklari[firma] = 0
+        # Firma stoklarını map'ten al (sorgu yok)
+        firma_stoklari = {firma: firma_stok_map.get((firma, sku), 0) for firma in FIRMALAR}
 
-        # Satın alma geçmişini çek
-        kayitlar = sb.table("satin_alma_gecmisi").select("*").eq("sku", sku).order("satin_alma_tarihi", desc=True).execute().data or []
+        # Satın alma geçmişini map'ten al (sorgu yok)
+        kayitlar = kayit_map.get(sku, [])
 
         toplam_firma_stok = sum(firma_stoklari.values())
         toplam_stok = bizim_stok + toplam_firma_stok
@@ -605,6 +623,7 @@ def siparis_uyarisi_kontrol(sku, firma, firma_data, bizim_stok):
 def muadil_bul(sku):
     return []
 
+@st.cache_data(ttl=300, show_spinner=False)
 def dashboard_hesapla():
     """Tüm dashboard verilerini hesaplar ve döndürür"""
     urunler, firma_data, stok_yaslar, yoldaki_data, gecmis_satislar_raw = get_all_dashboard_data()
