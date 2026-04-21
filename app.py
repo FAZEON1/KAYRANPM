@@ -120,52 +120,215 @@ if not giris_kontrol():
 
 st.markdown("""
 <style>
-/* Metric kartları */
+/* ── GLOBAL ─────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+html, body, .stApp {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    background: #070D1A !important;
+}
+
+/* ── METRIC KARTLARI ─────────────────────────────────────────────────── */
 [data-testid="metric-container"] {
-    background: rgba(255,255,255,0.08);
-    border-radius: 10px;
-    padding: 16px;
-    border: 1px solid rgba(255,255,255,0.15);
+    background: linear-gradient(135deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.03) 100%);
+    border-radius: 12px;
+    padding: 18px 20px;
+    border: 1px solid rgba(255,255,255,0.10);
+    transition: border-color 0.2s;
 }
-[data-testid="metric-container"] label { color: #B0BEC5 !important; }
-[data-testid="metric-container"] [data-testid="stMetricValue"] { color: #FFFFFF !important; font-weight: 700; }
+[data-testid="metric-container"]:hover { border-color: rgba(66,165,245,0.4); }
+[data-testid="metric-container"] label { color: #78909C !important; font-size:12px !important; font-weight:600 !important; letter-spacing:0.5px; text-transform:uppercase; }
+[data-testid="metric-container"] [data-testid="stMetricValue"] { color: #ECEFF1 !important; font-weight: 800 !important; font-size:28px !important; }
+[data-testid="metric-container"] [data-testid="stMetricDelta"] { font-size:12px !important; }
 
-/* Başlık */
-.baslik { font-size: 24px; font-weight: 800; color: #90CAF9; margin-bottom: 4px; }
-.alt-baslik { font-size: 13px; color: #90A4AE; margin-bottom: 20px; }
-
-/* Renkli etiket kutucukları — koyu arka plana uygun */
-.tag-kirmizi { background:#B71C1C; color:#FFCDD2; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:700; }
-.tag-turuncu { background:#E65100; color:#FFE0B2; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:700; }
-.tag-sari    { background:#F57F17; color:#FFF9C4; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:700; }
-.tag-yesil   { background:#1B5E20; color:#C8E6C9; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:700; }
-.tag-gri     { background:#37474F; color:#CFD8DC; padding:3px 10px; border-radius:12px; font-size:12px; }
-
-/* Uyarı kutuları */
-.uyari-box { background:#4E2600; border-left:4px solid #FF6F00; color:#FFE0B2;
-             padding:10px 16px; border-radius:4px; margin:6px 0; font-size:13px; }
-.info-box  { background:#0D2744; border-left:4px solid #42A5F5; color:#BBDEFB;
-             padding:10px 16px; border-radius:4px; margin:6px 0; font-size:13px; }
-.basari-box { background:#1B3A1F; border-left:4px solid #66BB6A; color:#C8E6C9;
-              padding:10px 16px; border-radius:4px; margin:6px 0; font-size:13px; }
-
-/* Sidebar */
-section[data-testid="stSidebar"] { background: #0D1B2A !important; }
-section[data-testid="stSidebar"] * { color: #E0E0E0 !important; }
-section[data-testid="stSidebar"] .stRadio label { color: #E0E0E0 !important; }
-section[data-testid="stSidebar"] .stButton button { 
-    background: #1F4E79 !important; color: white !important; border: none !important; 
+/* ── BAŞLIK STİLLERİ ─────────────────────────────────────────────────── */
+.baslik {
+    font-size: 22px;
+    font-weight: 800;
+    color: #ECEFF1;
+    margin-bottom: 2px;
+    letter-spacing: -0.3px;
+}
+.alt-baslik {
+    font-size: 12px;
+    color: #546E7A;
+    margin-bottom: 24px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+}
+.sayfa-baslik-cizgi {
+    height: 3px;
+    background: linear-gradient(90deg, #1565C0, #42A5F5, transparent);
+    border-radius: 2px;
+    margin-bottom: 24px;
 }
 
-/* Tablo hücre renkleri — koyu arka plana uygun yüksek kontrastlı */
+/* ── ETİKET KUTUCUKLARI ──────────────────────────────────────────────── */
+.tag-kirmizi { background:#7F0000; color:#FFCDD2; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+.tag-turuncu { background:#BF360C; color:#FFE0B2; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+.tag-sari    { background:#F57F17; color:#FFF9C4; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+.tag-yesil   { background:#1B5E20; color:#C8E6C9; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+.tag-mavi    { background:#0D47A1; color:#BBDEFB; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+.tag-gri     { background:#263238; color:#90A4AE; padding:3px 10px; border-radius:20px; font-size:11px; }
+
+/* ── BİLGİ KUTULARI ─────────────────────────────────────────────────── */
+.uyari-box {
+    background: linear-gradient(135deg,#3E1800,#2E1200);
+    border-left: 3px solid #FF6F00;
+    color: #FFE0B2;
+    padding: 12px 16px;
+    border-radius: 0 8px 8px 0;
+    margin: 8px 0;
+    font-size: 13px;
+    font-weight: 500;
+}
+.info-box {
+    background: linear-gradient(135deg,#0A1929,#071526);
+    border-left: 3px solid #42A5F5;
+    color: #BBDEFB;
+    padding: 12px 16px;
+    border-radius: 0 8px 8px 0;
+    margin: 8px 0;
+    font-size: 13px;
+    font-weight: 500;
+}
+.basari-box {
+    background: linear-gradient(135deg,#0F2910,#091E0A);
+    border-left: 3px solid #66BB6A;
+    color: #C8E6C9;
+    padding: 12px 16px;
+    border-radius: 0 8px 8px 0;
+    margin: 8px 0;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+/* ── SIDEBAR ─────────────────────────────────────────────────────────── */
+section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #050B16 0%, #0A1628 100%) !important;
+    border-right: 1px solid rgba(255,255,255,0.06) !important;
+}
+section[data-testid="stSidebar"] * { color: #CFD8DC !important; }
+section[data-testid="stSidebar"] .stRadio label {
+    color: #90A4AE !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    padding: 4px 0 !important;
+    transition: color 0.15s;
+}
+section[data-testid="stSidebar"] .stRadio label:hover { color: #ECEFF1 !important; }
+section[data-testid="stSidebar"] .stButton button {
+    background: linear-gradient(135deg,#1A3A5C,#1565C0) !important;
+    color: #ECEFF1 !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    font-size: 13px !important;
+}
+section[data-testid="stSidebar"] hr {
+    border-color: rgba(255,255,255,0.08) !important;
+    margin: 12px 0 !important;
+}
+
+/* ── BUTONLAR ────────────────────────────────────────────────────────── */
+.stButton > button {
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    font-size: 13px !important;
+    transition: all 0.2s !important;
+}
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg,#1565C0,#1E88E5) !important;
+    border: none !important;
+    color: white !important;
+    box-shadow: 0 4px 12px rgba(21,101,192,0.3) !important;
+}
+.stButton > button[kind="primary"]:hover {
+    box-shadow: 0 6px 20px rgba(21,101,192,0.5) !important;
+    transform: translateY(-1px) !important;
+}
+
+/* ── FORM ALANLARI ───────────────────────────────────────────────────── */
+.stTextInput > div > div > input,
+.stNumberInput > div > div > input,
+.stTextArea > div > div > textarea,
+.stSelectbox > div > div {
+    background: rgba(255,255,255,0.05) !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+    border-radius: 8px !important;
+    color: #ECEFF1 !important;
+    font-size: 13px !important;
+}
+.stTextInput > div > div > input:focus,
+.stNumberInput > div > div > input:focus {
+    border-color: #42A5F5 !important;
+    box-shadow: 0 0 0 2px rgba(66,165,245,0.15) !important;
+}
+label[data-testid="stWidgetLabel"] p {
+    color: #78909C !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.3px !important;
+}
+
+/* ── EXPANDER ────────────────────────────────────────────────────────── */
+.streamlit-expanderHeader {
+    background: rgba(255,255,255,0.04) !important;
+    border-radius: 10px !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    color: #90CAF9 !important;
+    font-weight: 600 !important;
+    font-size: 13px !important;
+}
+.streamlit-expanderContent {
+    background: rgba(255,255,255,0.02) !important;
+    border: 1px solid rgba(255,255,255,0.06) !important;
+    border-top: none !important;
+    border-radius: 0 0 10px 10px !important;
+}
+
+/* ── TABS ────────────────────────────────────────────────────────────── */
+.stTabs [data-baseweb="tab-list"] {
+    background: rgba(255,255,255,0.03) !important;
+    border-radius: 10px !important;
+    padding: 4px !important;
+    gap: 2px !important;
+}
+.stTabs [data-baseweb="tab"] {
+    border-radius: 8px !important;
+    color: #78909C !important;
+    font-weight: 600 !important;
+    font-size: 13px !important;
+    padding: 6px 16px !important;
+}
+.stTabs [aria-selected="true"] {
+    background: rgba(21,101,192,0.4) !important;
+    color: #90CAF9 !important;
+}
+
+/* ── DATAFRAME ───────────────────────────────────────────────────────── */
+.stDataFrame { border-radius: 10px !important; overflow: hidden !important; }
+.stDataFrame [data-testid="stDataFrameResizable"] {
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    border-radius: 10px !important;
+}
+
+/* ── DIVIDER ─────────────────────────────────────────────────────────── */
+hr { border-color: rgba(255,255,255,0.06) !important; margin: 20px 0 !important; }
+
+/* ── TABLO HÜCRE RENKLERİ ────────────────────────────────────────────── */
 .hucre-acil    { background:#7F0000 !important; color:#FFCDD2 !important; font-weight:700; }
 .hucre-turuncu { background:#BF360C !important; color:#FFE0B2 !important; font-weight:600; }
 .hucre-sari    { background:#827717 !important; color:#F9A825 !important; font-weight:600; }
 .hucre-yesil   { background:#1B5E20 !important; color:#A5D6A7 !important; font-weight:600; }
-.hucre-gri     { background:#37474F !important; color:#CFD8DC !important; }
-
-/* Final Cost Price vurgusu */
+.hucre-gri     { background:#263238 !important; color:#CFD8DC !important; }
 .fcp-vurgu { color:#FFD54F; font-weight:800; font-size:15px; }
+
+/* ── SCROLLBAR ───────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -208,21 +371,30 @@ def perf_html(perf):
 
 # ── Sidebar navigasyon ───────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 📦 KAYRANPM")
-    # Kullanıcı bilgisi
     aktif_kullanici = st.session_state.get("aktif_kullanici", "")
+    st.markdown(f"""
+    <div style="padding:20px 4px 16px; text-align:center;">
+        <div style="font-size:26px; margin-bottom:4px;">📦</div>
+        <div style="font-size:15px; font-weight:800; color:#ECEFF1; letter-spacing:2px;">KAYRANPM</div>
+        <div style="font-size:9px; color:#37474F; letter-spacing:1.5px; margin-top:2px; text-transform:uppercase;">Ürün Yönetim Sistemi</div>
+        <div style="height:1px; background:linear-gradient(90deg,transparent,rgba(21,101,192,0.6),transparent); margin-top:14px;"></div>
+    </div>
+    """, unsafe_allow_html=True)
+
     if aktif_kullanici:
         st.markdown(f"""
-        <div style="background:#163C5E; border-radius:8px; padding:8px 12px; margin-bottom:8px;">
-          <span style="color:#90CAF9; font-size:11px;">👤 Giriş yapan</span><br>
-          <span style="color:white; font-weight:bold; font-size:13px;">{aktif_kullanici}</span>
+        <div style="background:rgba(21,101,192,0.15); border:1px solid rgba(21,101,192,0.25);
+                    border-radius:10px; padding:10px 14px; margin-bottom:10px;">
+          <div style="color:#546E7A; font-size:10px; font-weight:600; letter-spacing:0.5px; margin-bottom:2px;">OTURUM AÇIK</div>
+          <div style="color:#90CAF9; font-weight:700; font-size:13px;">👤 {aktif_kullanici}</div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("🚪 Çıkış Yap", use_container_width=True):
+        if st.button("Çıkış Yap", use_container_width=True):
             st.session_state.giris_yapildi = False
             st.session_state.aktif_kullanici = ""
             st.rerun()
-    st.markdown("---")
+
+    st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
     sayfa = st.radio("", [
         "📊  Dashboard",
         "🔍  Ürün Detay",
@@ -235,15 +407,19 @@ with st.sidebar:
         "📄  Raporlar",
         "🔔  Bildirim Ayarları",
     ], label_visibility="collapsed")
-    st.markdown("---")
-    st.markdown(f"<small>🕐 {datetime.now().strftime('%d.%m.%Y %H:%M')}</small>", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style="text-align:center; margin-top:20px; padding-bottom:8px;">
+        <div style="color:#263238; font-size:10px;">🕐 {datetime.now().strftime('%d.%m.%Y  %H:%M')}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════════════
 # 1) DASHBOARD
 # ════════════════════════════════════════════════════════════════════
 if sayfa == "📊  Dashboard":
-    st.markdown('<div class="baslik">📊 KAYRANPM — Dashboard</div>', unsafe_allow_html=True)
-    st.markdown('<div class="alt-baslik">Stok durumu, satış performansı ve uyarılar</div>', unsafe_allow_html=True)
+    st.markdown('<div class="baslik">📊 Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="alt-baslik">Stok durumu · Satış performansı · Uyarılar</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sayfa-baslik-cizgi"></div>', unsafe_allow_html=True)
 
     # Filtreler
     col_f1, col_f2, col_f3 = st.columns([2, 2, 1])
@@ -679,7 +855,9 @@ if sayfa == "📊  Dashboard":
 # 2) ÜRÜN DETAY
 # ════════════════════════════════════════════════════════════════════
 elif sayfa == "🔍  Ürün Detay":
-    st.markdown('<div class="baslik">🔍 Ürün Detay & Satış Analizi</div>', unsafe_allow_html=True)
+    st.markdown('<div class="baslik">🔍 Ürün Detay</div>', unsafe_allow_html=True)
+    st.markdown('<div class="alt-baslik">Satış analizi · Trend · Sipariş takvimi</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sayfa-baslik-cizgi"></div>', unsafe_allow_html=True)
 
     # Ürün seçimi
     try:
@@ -893,7 +1071,9 @@ elif sayfa == "🔍  Ürün Detay":
 # 3) GENEL ANALİZ
 # ════════════════════════════════════════════════════════════════════
 elif sayfa == "📈  Genel Analiz":
-    st.markdown('<div class="baslik">📈 Genel Analiz Merkezi</div>', unsafe_allow_html=True)
+    st.markdown('<div class="baslik">📈 Genel Analiz</div>', unsafe_allow_html=True)
+    st.markdown('<div class="alt-baslik">Sipariş önceliklendirme · Ölü stok · Kategori & Marka</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sayfa-baslik-cizgi"></div>', unsafe_allow_html=True)
     st.markdown('<div class="alt-baslik">Sipariş önceliklendirme · Ölü stok · Kategori & Marka analizi</div>', unsafe_allow_html=True)
 
     try:
@@ -1121,6 +1301,7 @@ elif sayfa == "📈  Genel Analiz":
 elif sayfa == "📋  Tüm Ürünler":
     st.markdown('<div class="baslik">📋 Tüm Ürünler</div>', unsafe_allow_html=True)
     st.markdown('<div class="alt-baslik">FOB Price · Cost · Cost Price · Final Cost Price (Paçal) · Stok Dağılımı</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sayfa-baslik-cizgi"></div>', unsafe_allow_html=True)
 
     # ── YENİ ÜRÜN EKLE ──────────────────────────────────────────────
     with st.expander("➕ Yeni Ürün Ekle", expanded=False):
@@ -1432,7 +1613,8 @@ elif sayfa == "📋  Tüm Ürünler":
 
 elif sayfa == "🛒  Satın Alma Geçmişi":
     st.markdown('<div class="baslik">🛒 Satın Alma Geçmişi</div>', unsafe_allow_html=True)
-    st.markdown('<div class="alt-baslik">Tüm ürünlerin satın alma kayıtları — tarih, tedarikçi, FOB, Cost Price</div>', unsafe_allow_html=True)
+    st.markdown('<div class="alt-baslik">Tedarikçi · FOB Price · Cost Price · Paçal hesabı</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sayfa-baslik-cizgi"></div>', unsafe_allow_html=True)
 
     tum_kayitlar = get_satin_alma_gecmisi()
 
@@ -1528,7 +1710,8 @@ elif sayfa == "🛒  Satın Alma Geçmişi":
 
 elif sayfa == "🎯  Kampanya Takip":
     st.markdown('<div class="baslik">🎯 Kampanya Takip</div>', unsafe_allow_html=True)
-    st.markdown('<div class="alt-baslik">Kampanya performansı, firma destek tutarları ve net kar analizi</div>', unsafe_allow_html=True)
+    st.markdown('<div class="alt-baslik">Firma desteği · Net kar · Kampanya performansı</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sayfa-baslik-cizgi"></div>', unsafe_allow_html=True)
 
     FIRMA_LISTESI_K = ["ITOPYA", "HB", "VATAN", "MONDAY", "KANAL", "DİĞER"]
 
@@ -1910,7 +2093,8 @@ elif sayfa == "🎯  Kampanya Takip":
 
 elif sayfa == "📦  Sipariş Önerisi":
     st.markdown('<div class="baslik">📦 Sipariş Önerisi</div>', unsafe_allow_html=True)
-    st.markdown('<div class="alt-baslik">135 günden az stok kalan ürünler otomatik listelenir</div>', unsafe_allow_html=True)
+    st.markdown('<div class="alt-baslik">135 günden az stok kalan ürünler · Otomatik öneri</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sayfa-baslik-cizgi"></div>', unsafe_allow_html=True)
 
     try:
         siparis_listesi = siparis_onerisi_listesi()
@@ -2053,7 +2237,9 @@ elif sayfa == "📦  Sipariş Önerisi":
 
 
 elif sayfa == "📂  Veri Yükleme":
-    st.markdown('<div class="baslik">📂 Veri Yükleme Merkezi</div>', unsafe_allow_html=True)
+    st.markdown('<div class="baslik">📂 Veri Yükleme</div>', unsafe_allow_html=True)
+    st.markdown('<div class="alt-baslik">Excel yükle · Geçmiş yüklemeleri gör · Veriyi yönet</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sayfa-baslik-cizgi"></div>', unsafe_allow_html=True)
 
     # Şablon indir
     with st.expander("📋 Excel Şablonunu İndir (ilk kez kullanıyorsanız buradan başlayın)", expanded=False):
@@ -2165,7 +2351,9 @@ elif sayfa == "📂  Veri Yükleme":
 # 8) RAPORLAR
 # ════════════════════════════════════════════════════════════════════
 elif sayfa == "📄  Raporlar":
-    st.markdown('<div class="baslik">📄 Rapor Oluşturma</div>', unsafe_allow_html=True)
+    st.markdown('<div class="baslik">📄 Raporlar</div>', unsafe_allow_html=True)
+    st.markdown('<div class="alt-baslik">Excel & PDF rapor oluştur · İndir</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sayfa-baslik-cizgi"></div>', unsafe_allow_html=True)
 
     col1, col2 = st.columns(2)
 
