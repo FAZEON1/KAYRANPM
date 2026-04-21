@@ -47,54 +47,70 @@ def giris_ekrani():
     """Giriş ekranını gösterir."""
     st.markdown("""
     <style>
-    .giris-kart {
-        max-width: 420px; margin: 80px auto 0;
-        background: white; border-radius: 16px;
-        padding: 40px; box-shadow: 0 4px 24px rgba(0,0,0,0.10);
-        border: 1px solid #E0E0E0;
+    .stApp { background: #0A0F1E; }
+    .giris-bg {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
-    .giris-baslik { font-size: 24px; font-weight: 800; color: #1F4E79; margin-bottom: 4px; }
-    .giris-alt { font-size: 13px; color: #757575; margin-bottom: 28px; }
     </style>
-    <div class="giris-kart">
-      <div class="giris-baslik">📦 KAYRANPM</div>
-      <div class="giris-alt">Devam etmek için giriş yapın</div>
+    """, unsafe_allow_html=True)
+
+    # Logo ve başlık
+    st.markdown("""
+    <div style="text-align:center; padding: 40px 0 20px;">
+        <div style="font-size:52px; margin-bottom:8px;">📦</div>
+        <div style="font-size:32px; font-weight:900; color:#FFFFFF; letter-spacing:3px;">KAYRANPM</div>
+        <div style="font-size:13px; color:#546E7A; letter-spacing:2px; text-transform:uppercase; margin-top:6px;">
+            Ürün & Stok Yönetim Sistemi
+        </div>
+        <div style="width:60px; height:3px; background:linear-gradient(90deg,#1565C0,#42A5F5);
+                    margin:16px auto 0; border-radius:2px;"></div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Ortaya hizalı form
-    col1, col2, col3 = st.columns([1, 2, 1])
+    col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
-        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown("""
+        <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08);
+                    border-radius:16px; padding:32px 28px; margin-top:8px;">
+            <div style="color:#90CAF9; font-size:13px; font-weight:600; letter-spacing:1px;
+                        text-transform:uppercase; margin-bottom:20px; text-align:center;">
+                🔐 Güvenli Giriş
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
         with st.form("giris_form"):
-            st.markdown("### 🔐 Giriş Yap")
-            kullanici = st.text_input("Kullanıcı Adı", placeholder="kullanici_adi")
+            kullanici = st.text_input("Kullanıcı Adı", placeholder="kullanici_adi",
+                                      label_visibility="visible")
             sifre = st.text_input("Şifre", type="password", placeholder="••••••••")
-            giris_btn = st.form_submit_button("Giriş Yap", type="primary", use_container_width=True)
+            giris_btn = st.form_submit_button("Giriş Yap →", type="primary",
+                                              use_container_width=True)
 
-        if giris_btn:
-            # Secrets'tan kullanıcıları kontrol et
-            try:
-                kullanicilar = st.secrets.get("kullanicilar", {})
-                if not kullanicilar:
-                    # Secrets yoksa geliştirici modu — sadece uyarı göster
-                    st.warning("⚠️ Kullanıcı ayarları henüz yapılandırılmamış. Streamlit Cloud → Settings → Secrets bölümünden kullanıcıları ekleyin.")
-                    st.code("""
-# Streamlit Secrets'a eklenecek format:
-[kullanicilar]
-ibrahim = "sifreniz123"
-ekip_uyesi = "baska_sifre"
-                    """)
-                    return
+        st.markdown("""
+        <div style="text-align:center; margin-top:16px;">
+            <span style="color:#37474F; font-size:11px;">
+                🔒 Verileriniz şifreli ve güvende
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
 
-                if kullanici in kullanicilar and kullanicilar[kullanici] == sifre:
-                    st.session_state.giris_yapildi = True
-                    st.session_state.aktif_kullanici = kullanici
-                    st.rerun()
-                else:
-                    st.error("❌ Kullanıcı adı veya şifre hatalı.")
-            except Exception as e:
-                st.error(f"Giriş sistemi hatası: {e}")
+    if giris_btn:
+        try:
+            kullanicilar = st.secrets.get("kullanicilar", {})
+            if not kullanicilar:
+                st.warning("⚠️ Kullanıcı ayarları yapılandırılmamış. Streamlit Secrets bölümünden ekleyin.")
+                return
+            if kullanici in kullanicilar and kullanicilar[kullanici] == sifre:
+                st.session_state.giris_yapildi = True
+                st.session_state.aktif_kullanici = kullanici
+                st.rerun()
+            else:
+                st.error("❌ Kullanıcı adı veya şifre hatalı.")
+        except Exception as e:
+            st.error(f"Giriş sistemi hatası: {e}")
 
 # Giriş kontrolü yap
 if not giris_kontrol():
@@ -1245,32 +1261,20 @@ elif sayfa == "📋  Tüm Ürünler":
     mal_y = secilen.get("mal_yuzde") or secilen.get("son_mal_yuzde") or 0
 
     if fob > 0 or fcp > 0:
-        st.markdown(f"""
-        <div style="background:rgba(255,255,255,0.05); border-radius:12px; padding:20px; margin-bottom:16px; border:1px solid rgba(255,255,255,0.1)">
-            <div style="color:#90CAF9; font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:1px; margin-bottom:14px;">FİYAT ANALİZİ</div>
-            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:10px;">
-                <div style="background:#1a2a3a; border-radius:8px; padding:12px; text-align:center;">
-                    <div style="color:#90A4AE; font-size:11px; margin-bottom:4px;">FOB PRICE</div>
-                    <div style="color:#FFFFFF; font-size:18px; font-weight:700;">${fob:,.2f}</div>
-                </div>
-                <div style="background:#1a2a3a; border-radius:8px; padding:12px; text-align:center;">
-                    <div style="color:#90A4AE; font-size:11px; margin-bottom:4px;">COST (%{mal_y:.1f})</div>
-                    <div style="color:#FFA726; font-size:18px; font-weight:700;">${cost:,.2f}</div>
-                </div>
-                <div style="background:#1a2a3a; border-radius:8px; padding:12px; text-align:center;">
-                    <div style="color:#90A4AE; font-size:11px; margin-bottom:4px;">COST PRICE</div>
-                    <div style="color:#FFFFFF; font-size:18px; font-weight:700;">${cost_price:,.2f}</div>
-                </div>
-                <div style="background:#1a3a00; border-radius:8px; padding:12px; text-align:center; border:1px solid #FFD54F;">
-                    <div style="color:#FFD54F; font-size:11px; font-weight:700; margin-bottom:4px;">⭐ FINAL COST PRICE</div>
-                    <div style="color:#FFD54F; font-size:22px; font-weight:800;">${fcp:,.2f}</div>
-                    <div style="color:#A5D6A7; font-size:10px;">Paçal maliyet</div>
-                </div>
-                {"" if not satis else f'<div style="background:#1a2a3a; border-radius:8px; padding:12px; text-align:center;"><div style="color:#90A4AE; font-size:11px; margin-bottom:4px;">SATIŞ FİYATI</div><div style="color:#29B6F6; font-size:18px; font-weight:700;">${satis:,.2f}</div></div>'}
-                {"" if not (satis > 0 and fcp > 0) else f'<div style="background:#1B3A2A; border-radius:8px; padding:12px; text-align:center;"><div style="color:#81C784; font-size:11px; margin-bottom:4px;">KAR</div><div style="color:#A5D6A7; font-size:18px; font-weight:700;">${satis-fcp:,.2f} (%{((satis-fcp)/satis*100):.1f})</div></div>'}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        satis_html = f'<div style="background:#1a2a3a; border-radius:8px; padding:12px; text-align:center;"><div style="color:#90A4AE; font-size:11px; margin-bottom:4px;">SATIŞ FİYATI</div><div style="color:#29B6F6; font-size:18px; font-weight:700;">${satis:,.2f}</div></div>' if satis > 0 else ""
+        kar_html = f'<div style="background:#1B3A2A; border-radius:8px; padding:12px; text-align:center;"><div style="color:#81C784; font-size:11px; margin-bottom:4px;">KAR</div><div style="color:#A5D6A7; font-size:18px; font-weight:700;">${satis-fcp:,.2f} (%{((satis-fcp)/satis*100):.1f})</div></div>' if (satis > 0 and fcp > 0) else ""
+        st.markdown(
+            f'<div style="background:rgba(255,255,255,0.05); border-radius:12px; padding:20px; margin-bottom:16px; border:1px solid rgba(255,255,255,0.1)">'
+            f'<div style="color:#90CAF9; font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:1px; margin-bottom:14px;">FİYAT ANALİZİ</div>'
+            f'<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:10px;">'
+            f'<div style="background:#1a2a3a; border-radius:8px; padding:12px; text-align:center;"><div style="color:#90A4AE; font-size:11px; margin-bottom:4px;">FOB PRICE</div><div style="color:#FFFFFF; font-size:18px; font-weight:700;">${fob:,.2f}</div></div>'
+            f'<div style="background:#1a2a3a; border-radius:8px; padding:12px; text-align:center;"><div style="color:#90A4AE; font-size:11px; margin-bottom:4px;">COST (%{mal_y:.1f})</div><div style="color:#FFA726; font-size:18px; font-weight:700;">${cost:,.2f}</div></div>'
+            f'<div style="background:#1a2a3a; border-radius:8px; padding:12px; text-align:center;"><div style="color:#90A4AE; font-size:11px; margin-bottom:4px;">COST PRICE</div><div style="color:#FFFFFF; font-size:18px; font-weight:700;">${cost_price:,.2f}</div></div>'
+            f'<div style="background:#1a3a00; border-radius:8px; padding:12px; text-align:center; border:1px solid #FFD54F;"><div style="color:#FFD54F; font-size:11px; font-weight:700; margin-bottom:4px;">⭐ FINAL COST PRICE</div><div style="color:#FFD54F; font-size:22px; font-weight:800;">${fcp:,.2f}</div><div style="color:#A5D6A7; font-size:10px;">Paçal maliyet</div></div>'
+            f'{satis_html}{kar_html}'
+            f'</div></div>',
+            unsafe_allow_html=True
+        )
 
     # Satın Alma Geçmişi — bu ürün için
     st.markdown(f"#### 📋 Satın Alma Geçmişi — {secilen['urun_adi']}")
