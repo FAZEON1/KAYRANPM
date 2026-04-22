@@ -1676,112 +1676,76 @@ elif sayfa == "🛒  Satın Alma Geçmişi":
 
     st.markdown("---")
 
-    # Tablo + Düzenleme
+    # Düzenlenebilir tablo
     rows_sg = []
     for k in kayitlar:
         fob = k.get("alis_fiyati") or k.get("birim_alis_fiyati") or 0
         mal_y = k.get("maliyet_yuzdesi") or 0
-        cost = fob * mal_y / 100
-        cost_price = fob + cost
-        adet = k.get("adet") or 0
         rows_sg.append({
             "ID": k["id"],
             "Tarih": k.get("satin_alma_tarihi",""),
             "SKU": k["sku"],
             "Ürün Adı": k.get("urun_adi",""),
-            "Tedarikçi": k.get("tedarikci",""),
-            "Adet": adet,
-            "FOB Price ($)": f"${fob:,.2f}",
-            "Cost %": f"%{mal_y:.1f}",
-            "Cost ($)": f"${cost:,.2f}",
-            "Cost Price ($)": f"${cost_price:,.2f}",
-            "Toplam Tutar ($)": f"${cost_price * adet:,.0f}",
+            "Tedarikçi": k.get("tedarikci","") or "",
+            "Adet": int(k.get("adet",0) or 0),
+            "FOB ($)": float(fob),
+            "Cost %": float(mal_y),
             "Notlar": k.get("notlar","") or "",
         })
 
     df_sg = pd.DataFrame(rows_sg)
-    st.dataframe(df_sg.drop(columns=["ID"]), use_container_width=True, height=400, hide_index=True)
 
-    st.markdown("---")
-    st.markdown("**✏️ Kayıt Düzenle / Sil**")
-    st.caption("Düzenlemek istediğin kaydı seç.")
+    st.caption("✏️ Hücreye tıklayarak düzenle, ardından **Değişiklikleri Kaydet** butonuna bas.")
 
-    if kayitlar:
-        kayit_secenekler = {
-            f"#{k['id']} | {k.get('satin_alma_tarihi','')} | {k['sku']} | {k.get('tedarikci','')} | {k.get('adet',0)} adet": k
-            for k in kayitlar
-        }
-        secili_label = st.selectbox("Kayıt Seç", list(kayit_secenekler.keys()), key="sg_secim")
-        secili_k = kayit_secenekler[secili_label]
-        kid_sg = secili_k["id"]
+    edited_df = st.data_editor(
+        df_sg.drop(columns=["ID"]),
+        use_container_width=True,
+        hide_index=True,
+        height=400,
+        column_config={
+            "Tarih": st.column_config.DateColumn("Tarih", format="YYYY-MM-DD"),
+            "SKU": st.column_config.TextColumn("SKU", disabled=True),
+            "Ürün Adı": st.column_config.TextColumn("Ürün Adı", disabled=True),
+            "Tedarikçi": st.column_config.TextColumn("Tedarikçi"),
+            "Adet": st.column_config.NumberColumn("Adet", min_value=0, step=1, format="%d"),
+            "FOB ($)": st.column_config.NumberColumn("FOB ($)", min_value=0.0, format="$%.2f"),
+            "Cost %": st.column_config.NumberColumn("Cost %", min_value=0.0, max_value=100.0, format="%.1f%%"),
+            "Notlar": st.column_config.TextColumn("Notlar"),
+        },
+        key="sg_editor"
+    )
 
-        with st.form(f"sg_duzenle_{kid_sg}", clear_on_submit=False):
-            sd1, sd2, sd3 = st.columns(3)
-            with sd1:
-                sd_tarih = st.date_input(
-                    "Satın Alma Tarihi",
-                    value=date.fromisoformat(secili_k["satin_alma_tarihi"]) if secili_k.get("satin_alma_tarihi") else date.today(),
-                    key=f"sd_tarih_{kid_sg}"
-                )
-                sd_tedarikci = st.text_input(
-                    "Tedarikçi",
-                    value=secili_k.get("tedarikci","") or "",
-                    key=f"sd_ted_{kid_sg}"
-                )
-            with sd2:
-                sd_adet = st.number_input(
-                    "Adet",
-                    value=int(secili_k.get("adet",0) or 0),
-                    min_value=0, step=1,
-                    key=f"sd_adet_{kid_sg}"
-                )
-                sd_fob = st.number_input(
-                    "FOB Price ($)",
-                    value=float(secili_k.get("alis_fiyati", secili_k.get("birim_alis_fiyati", 0)) or 0),
-                    min_value=0.0, step=0.01, format="%.2f",
-                    key=f"sd_fob_{kid_sg}"
-                )
-            with sd3:
-                sd_cost_yuzde = st.number_input(
-                    "Cost %",
-                    value=float(secili_k.get("maliyet_yuzdesi",0) or 0),
-                    min_value=0.0, max_value=100.0, step=0.1, format="%.1f",
-                    key=f"sd_cost_{kid_sg}"
-                )
-                sd_notlar = st.text_input(
-                    "Notlar",
-                    value=secili_k.get("notlar","") or "",
-                    key=f"sd_not_{kid_sg}"
-                )
+    if st.button("💾 Değişiklikleri Kaydet", type="primary", use_container_width=False, key="sg_kaydet"):
+        degisen = 0
+        for i, (orig, edit) in enumerate(zip(rows_sg, edited_df.to_dict("records"))):
+            kayit_id = orig["ID"]
+            # Tarih string'e çevir
+            tarih_val = str(edit.get("Tarih", orig["Tarih"]))
+            if tarih_val == "None" or tarih_val == "nan":
+                tarih_val = orig["Tarih"]
+            guncelle_satin_alma(
+                kayit_id,
+                edit.get("Tedarikçi", orig["Tedarikçi"]),
+                tarih_val,
+                int(edit.get("Adet", orig["Adet"]) or 0),
+                float(edit.get("FOB ($)", orig["FOB ($)"]) or 0),
+                float(edit.get("Cost %", orig["Cost %"]) or 0),
+                edit.get("Notlar", orig["Notlar"]) or ""
+            )
+            degisen += 1
+        st.cache_data.clear()
+        st.success(f"✅ {degisen} kayıt güncellendi!")
+        st.rerun()
 
-            # Canlı hesap
-            if sd_fob > 0:
-                sd_cost_val = sd_fob * sd_cost_yuzde / 100
-                sd_cp = sd_fob + sd_cost_val
-                sd_toplam = sd_cp * sd_adet
-                st.markdown(
-                    f'<div class="info-box" style="font-size:12px; margin:6px 0;">'
-                    f'Cost: <b>${sd_cost_val:.2f}</b> &nbsp;|&nbsp; '
-                    f'Cost Price: <b>${sd_cp:.2f}</b> &nbsp;|&nbsp; '
-                    f'Toplam: <b>${sd_toplam:,.0f}</b>'
-                    f'</div>',
-                    unsafe_allow_html=True
-                )
-
-            sb1, sb2 = st.columns([1,1])
-            with sb1:
-                if st.form_submit_button("💾 Güncelle", type="primary", use_container_width=True):
-                    guncelle_satin_alma(kid_sg, sd_tedarikci, str(sd_tarih),
-                                       sd_adet, sd_fob, sd_cost_yuzde, sd_notlar)
-                    st.cache_data.clear()
-                    st.success("✅ Kayıt güncellendi!")
-                    st.rerun()
-            with sb2:
-                if st.form_submit_button("🗑️ Sil", use_container_width=True):
-                    sil_satin_alma(kid_sg)
-                    st.cache_data.clear()
-                    st.warning(f"#{kid_sg} silindi.")
-                    st.rerun()
+    # Silme
+    with st.expander("🗑️ Kayıt Sil"):
+        sil_options = {f"#{k['id']} | {k.get('satin_alma_tarihi','')} | {k['sku']} | {k.get('adet',0)} adet": k['id'] for k in kayitlar}
+        sil_secim = st.selectbox("Silinecek Kayıt", list(sil_options.keys()), key="sg_sil_sec")
+        if st.button("🗑️ Sil", key="sg_sil_btn", type="secondary"):
+            sil_satin_alma(sil_options[sil_secim])
+            st.cache_data.clear()
+            st.success("Kayıt silindi.")
+            st.rerun()
 
     # Tedarikçi bazında özet grafik
     if len(kayitlar) > 1:
