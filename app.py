@@ -1800,6 +1800,8 @@ elif sayfa == "🎯  Kampanya Takip":
 
                 # Kampanya düzenleme
                 with st.expander(f"✏️ Kampanya Bilgilerini Düzenle — {kamp['kampanya_adi']}"):
+                    # ── Kampanya Genel Bilgileri ──
+                    st.markdown("**📋 Kampanya Bilgileri**")
                     with st.form(f"duzenle_kamp_{kid}"):
                         dk1, dk2 = st.columns(2)
                         with dk1:
@@ -1808,25 +1810,101 @@ elif sayfa == "🎯  Kampanya Takip":
                                 index=FIRMA_LISTESI_K.index(kamp["firma"]) if kamp["firma"] in FIRMA_LISTESI_K else 0,
                                 key=f"dk_firma_{kid}")
                         with dk2:
-                            dk_bas = st.date_input("Başlangıç", value=date.fromisoformat(kamp["baslangic_tarihi"]) if kamp["baslangic_tarihi"] else date.today(), key=f"dk_bas_{kid}")
-                            dk_bit = st.date_input("Bitiş", value=date.fromisoformat(kamp["bitis_tarihi"]) if kamp["bitis_tarihi"] else date.today(), key=f"dk_bit_{kid}")
+                            dk_bas = st.date_input("Başlangıç Tarihi", value=date.fromisoformat(kamp["baslangic_tarihi"]) if kamp["baslangic_tarihi"] else date.today(), key=f"dk_bas_{kid}")
+                            dk_bit = st.date_input("Bitiş Tarihi", value=date.fromisoformat(kamp["bitis_tarihi"]) if kamp["bitis_tarihi"] else date.today(), key=f"dk_bit_{kid}")
                         dk_not = st.text_area("Notlar", value=kamp.get("notlar","") or "", key=f"dk_not_{kid}")
                         dc1_k, dc2_k, dc3_k = st.columns(3)
                         with dc1_k:
-                            if st.form_submit_button("💾 Kaydet", use_container_width=True):
+                            if st.form_submit_button("💾 Kampanyayı Güncelle", use_container_width=True, type="primary"):
                                 guncelle_kampanya(kid, dk_adi, dk_firma, str(dk_bas), str(dk_bit), dk_not)
-                                st.success("Güncellendi!")
+                                st.cache_data.clear()
+                                st.success("✅ Kampanya güncellendi!")
                                 st.rerun()
                         with dc2_k:
                             if st.form_submit_button("🔒 Kampanyayı Kapat", use_container_width=True):
                                 kapat_kampanya(kid)
+                                st.cache_data.clear()
                                 st.success("Kampanya kapatıldı.")
                                 st.rerun()
                         with dc3_k:
-                            if st.form_submit_button("🗑️ Sil", use_container_width=True):
+                            if st.form_submit_button("🗑️ Kampanyayı Sil", use_container_width=True):
                                 sil_kampanya(kid)
+                                st.cache_data.clear()
                                 st.warning("Kampanya silindi.")
                                 st.rerun()
+
+                    # ── Ürün Bazında Düzenleme ──
+                    if k_urunler:
+                        st.markdown("---")
+                        st.markdown("**🛍️ Ürün Bilgilerini Düzenle**")
+                        st.caption("Her ürün için SKU, satış fiyatı, birim destek ve satılan adeti ayrı ayrı düzenleyebilirsiniz.")
+
+                        for ku in k_urunler:
+                            ku_id = ku["id"]
+                            pacal_ku = ku.get("pacal_maliyet") or 0
+                            # Paçal 0 ise güncel değer
+                            if pacal_ku == 0:
+                                pacal_ku = urun_dict_k.get(ku["sku"], {}).get("final_cost_price", 0)
+
+                            with st.form(f"urun_gun_{kid}_{ku_id}", clear_on_submit=False):
+                                st.markdown(f'<div style="background:rgba(255,255,255,0.04); border-radius:8px; padding:10px 14px; margin-bottom:6px;">'
+                                            f'<span style="color:#90CAF9; font-weight:700; font-size:13px;">📦 {ku.get("urun_adi","")}</span>'
+                                            f'<span style="color:#546E7A; font-size:11px; margin-left:8px;">SKU: {ku["sku"]}</span>'
+                                            f'</div>', unsafe_allow_html=True)
+
+                                ug1, ug2, ug3, ug4 = st.columns(4)
+                                with ug1:
+                                    ug_satis = st.number_input(
+                                        "Müşteriye Fiyat ($)",
+                                        value=float(ku.get("satis_fiyati", 0) or 0),
+                                        step=0.01, format="%.2f",
+                                        key=f"ug_s_{kid}_{ku_id}"
+                                    )
+                                with ug2:
+                                    ug_fd = st.number_input(
+                                        "Birim Firma Desteği ($)",
+                                        value=float(ku.get("birim_firma_destek", 0) or 0),
+                                        step=0.01, format="%.2f",
+                                        key=f"ug_fd_{kid}_{ku_id}"
+                                    )
+                                with ug3:
+                                    ug_ed = st.number_input(
+                                        "Birim Ek Destek ($)",
+                                        value=float(ku.get("birim_ek_destek", 0) or 0),
+                                        step=0.01, format="%.2f",
+                                        key=f"ug_ed_{kid}_{ku_id}"
+                                    )
+                                with ug4:
+                                    ug_satilan = st.number_input(
+                                        "Satılan Adet",
+                                        value=int(ku.get("satilan_adet", 0) or 0),
+                                        min_value=0, step=1,
+                                        key=f"ug_sa_{kid}_{ku_id}"
+                                    )
+
+                                # Canlı hesap göster
+                                if pacal_ku > 0 and ug_satis > 0:
+                                    toplam_destek = ug_fd + ug_ed
+                                    net_kar = (ug_satis - pacal_ku) - toplam_destek
+                                    net_marj = (net_kar / ug_satis * 100) if ug_satis > 0 else 0
+                                    toplam_net = net_kar * ug_satilan
+                                    renk = "#A5D6A7" if net_kar >= 0 else "#FFCDD2"
+                                    st.markdown(
+                                        f'<div class="info-box" style="font-size:12px; margin:4px 0;">'
+                                        f'⭐ Paçal: <b>${pacal_ku:.2f}</b> &nbsp;|&nbsp; '
+                                        f'Net Kar/Adet: <span style="color:{renk}; font-weight:700;">${net_kar:.2f} (%{net_marj:.1f})</span> &nbsp;|&nbsp; '
+                                        f'Toplam Net: <span style="color:{renk}; font-weight:700;">${toplam_net:.0f}</span>'
+                                        f'</div>',
+                                        unsafe_allow_html=True
+                                    )
+
+                                ub1, ub2 = st.columns([3, 1])
+                                with ub2:
+                                    if st.form_submit_button("💾 Güncelle", use_container_width=True, type="primary"):
+                                        guncelle_kampanya_urun(ku_id, ug_satis, ug_fd, ug_ed, ug_satilan, ku.get("notlar",""))
+                                        st.cache_data.clear()
+                                        st.success(f"✅ Güncellendi!")
+                                        st.rerun()
 
                 # Ürün ekleme formu
                 with st.expander(f"➕ Ürün Ekle — {kamp['kampanya_adi']}"):
@@ -2500,3 +2578,4 @@ elif sayfa == "🔔  Bildirim Ayarları":
         st.dataframe(df_ozet.style.apply(ozet_rengi, axis=1), use_container_width=True, height=400)
     except Exception as e:
         st.error(f"Veri yüklenemedi: {e}")
+
