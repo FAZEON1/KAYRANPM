@@ -1703,7 +1703,7 @@ elif sayfa == "🛒  Satın Alma Geçmişi":
         hide_index=True,
         height=400,
         column_config={
-            "Tarih": st.column_config.DateColumn("Tarih", format="YYYY-MM-DD"),
+            "Tarih": st.column_config.TextColumn("Tarih", help="YYYY-MM-DD formatında"),
             "SKU": st.column_config.TextColumn("SKU", disabled=True),
             "Ürün Adı": st.column_config.TextColumn("Ürün Adı", disabled=True),
             "Tedarikçi": st.column_config.TextColumn("Tedarikçi"),
