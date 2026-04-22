@@ -1676,7 +1676,7 @@ elif sayfa == "🛒  Satın Alma Geçmişi":
 
     st.markdown("---")
 
-    # Tablo
+    # Tablo + Düzenleme
     rows_sg = []
     for k in kayitlar:
         fob = k.get("alis_fiyati") or k.get("birim_alis_fiyati") or 0
@@ -1700,15 +1700,88 @@ elif sayfa == "🛒  Satın Alma Geçmişi":
         })
 
     df_sg = pd.DataFrame(rows_sg)
-    st.dataframe(df_sg.drop(columns=["ID"]), use_container_width=True, height=500, hide_index=True)
+    st.dataframe(df_sg.drop(columns=["ID"]), use_container_width=True, height=400, hide_index=True)
 
-    # Silme
-    with st.expander("🗑️ Kayıt Sil"):
-        silme_id = st.number_input("Silinecek ID", min_value=1, step=1, key="sg_sil_id")
-        if st.button("Sil", key="sg_sil_btn"):
-            sil_satin_alma(int(silme_id))
-            st.success(f"#{silme_id} silindi.")
-            st.rerun()
+    st.markdown("---")
+    st.markdown("**✏️ Kayıt Düzenle / Sil**")
+    st.caption("Düzenlemek istediğin kaydı seç.")
+
+    if kayitlar:
+        kayit_secenekler = {
+            f"#{k['id']} | {k.get('satin_alma_tarihi','')} | {k['sku']} | {k.get('tedarikci','')} | {k.get('adet',0)} adet": k
+            for k in kayitlar
+        }
+        secili_label = st.selectbox("Kayıt Seç", list(kayit_secenekler.keys()), key="sg_secim")
+        secili_k = kayit_secenekler[secili_label]
+        kid_sg = secili_k["id"]
+
+        with st.form(f"sg_duzenle_{kid_sg}", clear_on_submit=False):
+            sd1, sd2, sd3 = st.columns(3)
+            with sd1:
+                sd_tarih = st.date_input(
+                    "Satın Alma Tarihi",
+                    value=date.fromisoformat(secili_k["satin_alma_tarihi"]) if secili_k.get("satin_alma_tarihi") else date.today(),
+                    key=f"sd_tarih_{kid_sg}"
+                )
+                sd_tedarikci = st.text_input(
+                    "Tedarikçi",
+                    value=secili_k.get("tedarikci","") or "",
+                    key=f"sd_ted_{kid_sg}"
+                )
+            with sd2:
+                sd_adet = st.number_input(
+                    "Adet",
+                    value=int(secili_k.get("adet",0) or 0),
+                    min_value=0, step=1,
+                    key=f"sd_adet_{kid_sg}"
+                )
+                sd_fob = st.number_input(
+                    "FOB Price ($)",
+                    value=float(secili_k.get("alis_fiyati", secili_k.get("birim_alis_fiyati", 0)) or 0),
+                    min_value=0.0, step=0.01, format="%.2f",
+                    key=f"sd_fob_{kid_sg}"
+                )
+            with sd3:
+                sd_cost_yuzde = st.number_input(
+                    "Cost %",
+                    value=float(secili_k.get("maliyet_yuzdesi",0) or 0),
+                    min_value=0.0, max_value=100.0, step=0.1, format="%.1f",
+                    key=f"sd_cost_{kid_sg}"
+                )
+                sd_notlar = st.text_input(
+                    "Notlar",
+                    value=secili_k.get("notlar","") or "",
+                    key=f"sd_not_{kid_sg}"
+                )
+
+            # Canlı hesap
+            if sd_fob > 0:
+                sd_cost_val = sd_fob * sd_cost_yuzde / 100
+                sd_cp = sd_fob + sd_cost_val
+                sd_toplam = sd_cp * sd_adet
+                st.markdown(
+                    f'<div class="info-box" style="font-size:12px; margin:6px 0;">'
+                    f'Cost: <b>${sd_cost_val:.2f}</b> &nbsp;|&nbsp; '
+                    f'Cost Price: <b>${sd_cp:.2f}</b> &nbsp;|&nbsp; '
+                    f'Toplam: <b>${sd_toplam:,.0f}</b>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+            sb1, sb2 = st.columns([1,1])
+            with sb1:
+                if st.form_submit_button("💾 Güncelle", type="primary", use_container_width=True):
+                    guncelle_satin_alma(kid_sg, sd_tedarikci, str(sd_tarih),
+                                       sd_adet, sd_fob, sd_cost_yuzde, sd_notlar)
+                    st.cache_data.clear()
+                    st.success("✅ Kayıt güncellendi!")
+                    st.rerun()
+            with sb2:
+                if st.form_submit_button("🗑️ Sil", use_container_width=True):
+                    sil_satin_alma(kid_sg)
+                    st.cache_data.clear()
+                    st.warning(f"#{kid_sg} silindi.")
+                    st.rerun()
 
     # Tedarikçi bazında özet grafik
     if len(kayitlar) > 1:
@@ -1821,17 +1894,61 @@ elif sayfa == "🎯  Kampanya Takip":
                                 st.success("✅ Kampanya güncellendi!")
                                 st.rerun()
                         with dc2_k:
-                            if st.form_submit_button("🔒 Kampanyayı Kapat", use_container_width=True):
-                                kapat_kampanya(kid)
-                                st.cache_data.clear()
-                                st.success("Kampanya kapatıldı.")
-                                st.rerun()
+                            kapat_flag = st.form_submit_button("🔒 Kampanyayı Kapat", use_container_width=True)
                         with dc3_k:
                             if st.form_submit_button("🗑️ Kampanyayı Sil", use_container_width=True):
                                 sil_kampanya(kid)
                                 st.cache_data.clear()
                                 st.warning("Kampanya silindi.")
                                 st.rerun()
+
+                    # Kampanya kapat — adet sor
+                    if kapat_flag:
+                        st.session_state[f"kapat_onay_{kid}"] = True
+
+                    if st.session_state.get(f"kapat_onay_{kid}"):
+                        st.markdown("---")
+                        st.markdown("**🔒 Kampanyayı Kapat — Satış Adetlerini Gir**")
+                        st.caption("Kampanya kapanmadan önce her ürün için satılan adeti girin.")
+                        with st.form(f"kapat_form_{kid}", clear_on_submit=True):
+                            adet_girisleri = {}
+                            for ku in k_urunler:
+                                kf1, kf2, kf3 = st.columns([2, 2, 1])
+                                with kf1:
+                                    st.markdown(f'<span style="color:#90CAF9; font-size:13px; font-weight:600;">{ku["sku"]}</span>'
+                                               f'<span style="color:#546E7A; font-size:11px;"> — {ku.get("urun_adi","")[:40]}</span>',
+                                               unsafe_allow_html=True)
+                                with kf2:
+                                    adet_girisleri[ku["id"]] = st.number_input(
+                                        "Satılan Adet",
+                                        value=int(ku.get("satilan_adet",0) or 0),
+                                        min_value=0, step=1,
+                                        key=f"kapat_adet_{kid}_{ku['id']}",
+                                        label_visibility="collapsed"
+                                    )
+                                with kf3:
+                                    st.markdown(f'<span style="color:#78909C; font-size:11px;">mevcut: {ku.get("satilan_adet",0)}</span>', unsafe_allow_html=True)
+
+                            kk1, kk2 = st.columns(2)
+                            with kk1:
+                                if st.form_submit_button("✅ Kaydet ve Kapat", type="primary", use_container_width=True):
+                                    for ku_id_k, adet_k in adet_girisleri.items():
+                                        ku_bilgi = next((x for x in k_urunler if x["id"] == ku_id_k), {})
+                                        guncelle_kampanya_urun(ku_id_k,
+                                            ku_bilgi.get("satis_fiyati",0),
+                                            ku_bilgi.get("birim_firma_destek",0),
+                                            ku_bilgi.get("birim_ek_destek",0),
+                                            adet_k,
+                                            ku_bilgi.get("notlar",""))
+                                    kapat_kampanya(kid)
+                                    st.session_state.pop(f"kapat_onay_{kid}", None)
+                                    st.cache_data.clear()
+                                    st.success("🔒 Kampanya kapatıldı ve satış adetleri kaydedildi!")
+                                    st.rerun()
+                            with kk2:
+                                if st.form_submit_button("İptal", use_container_width=True):
+                                    st.session_state.pop(f"kapat_onay_{kid}", None)
+                                    st.rerun()
 
                     # ── Ürün Bazında Düzenleme ──
                     if k_urunler:
