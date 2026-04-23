@@ -895,7 +895,8 @@ elif sayfa == "🔍  Ürün Detay":
 
     # Üst bilgi kartları
     c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("📦 Bizim Stok", urun["bizim_stok"])
+    toplam_stok_ud = urun.get("toplam_stok", urun.get("bizim_stok", 0))
+    c1.metric("📦 Toplam Stok", toplam_stok_ud)
     c2.metric("📊 Ort. Hft. Satış", round(urun.get("ortalama_haftalik_satis", 0)))
     c3.metric("⚡ Risk Skoru", f"{urun.get('risk_skor',0)}/100")
     stok_bitis = urun.get('stok_bitis_gun')
@@ -1702,6 +1703,7 @@ elif sayfa == "📋  Tüm Ürünler":
                 onay = st.checkbox(f"Silmeyi onaylıyorum", key="sil_onay")
                 if st.button("🗑️ Sil", type="primary", use_container_width=True, disabled=not onay):
                     sil_urun(sil_sku)
+                    st.cache_data.clear()
                     st.success(f"✅ {sil_sku} silindi.")
                     st.rerun()
 
@@ -1950,7 +1952,7 @@ elif sayfa == "🎯  Kampanya Takip":
                                 st.rerun()
 
                     # Kampanya kapat — adet sor (kapat_flag form içinden geliyor, güvenli)
-                    if kapat_flag if 'kapat_flag' in dir() else False:
+                    if locals().get('kapat_flag', False):
                         st.session_state[f"kapat_onay_{kid}"] = True
 
                     if st.session_state.get(f"kapat_onay_{kid}"):
@@ -2247,11 +2249,13 @@ elif sayfa == "🎯  Kampanya Takip":
                             with gf_c1:
                                 if st.form_submit_button("💾 Güncelle", type="primary", use_container_width=True):
                                     guncelle_kampanya_urun(g_id, g_satis, g_fd, g_ed, g_satilan, g_not)
+                                    st.cache_data.clear()
                                     st.success("Güncellendi!")
                                     st.rerun()
                             with gf_c2:
                                 if st.form_submit_button("🗑️ Ürünü Sil", use_container_width=True):
                                     sil_kampanya_urun(g_id)
+                                    st.cache_data.clear()
                                     st.warning("Ürün kaldırıldı.")
                                     st.rerun()
                 else:
@@ -2348,6 +2352,7 @@ elif sayfa == "🎯  Kampanya Takip":
 
                         if st.button(f"🗑️ Kampanyayı Sil", key=f"sil_gecmis_{kid}"):
                             sil_kampanya(kid)
+                            st.cache_data.clear()
                             st.warning("Silindi.")
                             st.rerun()
 
