@@ -728,6 +728,7 @@ if sayfa == "📊  Dashboard":
                         miktar = st.number_input("Miktar", min_value=1, value=10, key=f"sp_{urun['sku']}_{fd['firma']}")
                         if st.button("📦 Sipariş Önerisi Ekle", key=f"btn_{urun['sku']}_{fd['firma']}"):
                             ekle_siparis_onerisi(fd["firma"], urun["sku"], urun["urun_adi"], miktar)
+                            st.cache_data.clear()
                             st.success("Sipariş önerisi oluşturuldu!")
                             st.rerun()
 
@@ -1515,43 +1516,124 @@ elif sayfa == "📋  Tüm Ürünler":
             silme_id = st.number_input("Silinecek ID", min_value=1, step=1, key="sil_id_tu")
             if st.button("Sil", key="sil_btn_tu"):
                 sil_satin_alma(int(silme_id))
+                st.cache_data.clear()
                 st.success(f"#{silme_id} silindi.")
                 st.rerun()
 
     # Yeni Satın Alma Ekle
     st.markdown("---")
     st.markdown(f"#### ➕ Yeni Satın Alma Ekle — {secilen['urun_adi']}")
-    onceki = get_tum_tedarikciler()
-    with st.form("tu_satin_alma_form", clear_on_submit=True):
-        fc1, fc2 = st.columns(2)
-        with fc1:
-            tedarikci = st.text_input("Tedarikçi *",
-                help=f"Önceki: {', '.join(onceki[:4])}" if onceki else "")
-            satin_alma_tarihi = st.date_input("Tarih *", value=date.today())
-            notlar = st.text_area("Notlar")
-        with fc2:
-            adet = st.number_input("Adet *", min_value=1, value=100, step=1)
-            fob_price = st.number_input("FOB Price ($) *", min_value=0.0, value=0.0, step=0.01, format="%.2f")
-            maliyet_yuzdesi = st.number_input("Ek Maliyet (%)", min_value=0.0, max_value=200.0, value=0.0, step=0.5, format="%.1f",
-                help="Nakliye+gümrük+diğer masrafların FOB'a oranı")
-            if fob_price > 0:
-                cost = fob_price * maliyet_yuzdesi / 100
-                cp = fob_price + cost
-                st.markdown(f"""<div class="info-box" style="font-size:12px">
-                FOB: ${fob_price:.2f} + Cost: ${cost:.2f} = <b>Cost Price: ${cp:.2f}</b><br>
-                Toplam: ${cp * adet:,.0f}
-                </div>""", unsafe_allow_html=True)
-        submitted = st.form_submit_button("💾 Kaydet", type="primary", use_container_width=True)
 
-    if submitted:
-        if not tedarikci.strip(): st.error("Tedarikçi zorunludur.")
-        elif fob_price <= 0: st.error("FOB Price girilmesi zorunludur.")
-        else:
-            ekle_satin_alma(secilen_sku, secilen["urun_adi"], tedarikci.strip(),
-                            str(satin_alma_tarihi), adet, fob_price, maliyet_yuzdesi, notlar.strip())
-            cp = fob_price * (1 + maliyet_yuzdesi/100)
-            st.success(f"✅ Kaydedildi! Cost Price: ${cp:.2f}/adet")
-            st.rerun()
+    # Manuel veya Excel seçimi
+    ekle_tab1, ekle_tab2 = st.tabs(["📝 Manuel Giriş", "📊 Excel ile Toplu Yükle"])
+
+    with ekle_tab1:
+        onceki = get_tum_tedarikciler()
+        with st.form("tu_satin_alma_form", clear_on_submit=True):
+            fc1, fc2 = st.columns(2)
+            with fc1:
+                tedarikci = st.text_input("Tedarikçi *",
+                    help=f"Önceki: {', '.join(onceki[:4])}" if onceki else "")
+                satin_alma_tarihi = st.date_input("Tarih *", value=date.today())
+                notlar = st.text_area("Notlar")
+            with fc2:
+                adet = st.number_input("Adet *", min_value=1, value=100, step=1)
+                fob_price = st.number_input("FOB Price ($) *", min_value=0.0, value=0.0, step=0.01, format="%.2f")
+                maliyet_yuzdesi = st.number_input("Ek Maliyet (%)", min_value=0.0, max_value=200.0, value=0.0, step=0.5, format="%.1f",
+                    help="Nakliye+gümrük+diğer masrafların FOB'a oranı")
+                if fob_price > 0:
+                    cost = fob_price * maliyet_yuzdesi / 100
+                    cp = fob_price + cost
+                    st.markdown(f'<div class="info-box" style="font-size:12px">FOB: ${fob_price:.2f} + Cost: ${cost:.2f} = <b>Cost Price: ${cp:.2f}</b><br>Toplam: ${cp * adet:,.0f}</div>', unsafe_allow_html=True)
+            submitted = st.form_submit_button("💾 Kaydet", type="primary", use_container_width=True)
+
+        if submitted:
+            if not tedarikci.strip(): st.error("Tedarikçi zorunludur.")
+            elif fob_price <= 0: st.error("FOB Price girilmesi zorunludur.")
+            else:
+                ekle_satin_alma(secilen_sku, secilen["urun_adi"], tedarikci.strip(),
+                                str(satin_alma_tarihi), adet, fob_price, maliyet_yuzdesi, notlar.strip())
+                cp = fob_price * (1 + maliyet_yuzdesi/100)
+                st.success(f"✅ Kaydedildi! Cost Price: ${cp:.2f}/adet")
+                st.cache_data.clear()
+                st.rerun()
+
+    with ekle_tab2:
+        # Şablon indir
+        st.caption("Şablonu indirip doldurun, ardından yükleyin.")
+
+        import io
+        sablon_data = {
+            "SKU": [secilen_sku, ""],
+            "Tedarikçi": ["MASTER", ""],
+            "Tarih": [str(date.today()), ""],
+            "Adet": [100, ""],
+            "FOB Price ($)": [0.0, ""],
+            "Cost %": [0.0, ""],
+            "Notlar": ["", ""],
+        }
+        df_sablon = pd.DataFrame(sablon_data)
+        sablon_buf = io.BytesIO()
+        with pd.ExcelWriter(sablon_buf, engine="openpyxl") as writer:
+            df_sablon.to_excel(writer, index=False, sheet_name="Satın Alma")
+        sablon_buf.seek(0)
+        st.download_button(
+            "📥 Excel Şablonunu İndir",
+            sablon_buf,
+            "satin_alma_sablon.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+        st.markdown("---")
+        excel_file = st.file_uploader("Excel Dosyası Yükle", type=["xlsx","xls"], key="tu_sa_excel")
+        if excel_file:
+            try:
+                df_yukle = pd.read_excel(excel_file)
+                # Kolon normalize
+                df_yukle.columns = [str(c).strip() for c in df_yukle.columns]
+
+                # Önizleme
+                st.markdown("**📋 Önizleme:**")
+                st.dataframe(df_yukle, use_container_width=True, hide_index=True)
+
+                if st.button("⬆️ Tümünü Yükle", type="primary", key="tu_sa_yukle"):
+                    basarili = 0
+                    hatali = 0
+                    hatalar = []
+                    for _, row in df_yukle.iterrows():
+                        try:
+                            r_sku = str(row.get("SKU", secilen_sku)).strip() or secilen_sku
+                            r_ted = str(row.get("Tedarikçi", "")).strip()
+                            r_tarih = str(row.get("Tarih", str(date.today()))).strip()[:10]
+                            r_adet = int(row.get("Adet", 0) or 0)
+                            r_fob = float(row.get("FOB Price ($)", 0) or 0)
+                            r_cost = float(row.get("Cost %", 0) or 0)
+                            r_not = str(row.get("Notlar", "") or "").strip()
+
+                            if not r_sku or r_sku == "nan": continue
+                            if r_fob <= 0: 
+                                hatalar.append(f"{r_sku}: FOB Price sıfır")
+                                hatali += 1
+                                continue
+
+                            # Ürün adını bul
+                            r_urun = next((u["urun_adi"] for u in urun_data if u["sku"] == r_sku), r_sku)
+
+                            ekle_satin_alma(r_sku, r_urun, r_ted, r_tarih,
+                                           r_adet, r_fob, r_cost, r_not)
+                            basarili += 1
+                        except Exception as e:
+                            hatali += 1
+                            hatalar.append(str(e))
+
+                    st.cache_data.clear()
+                    if basarili > 0:
+                        st.success(f"✅ {basarili} kayıt başarıyla yüklendi!")
+                    if hatali > 0:
+                        st.warning(f"⚠️ {hatali} kayıt atlandı: {' | '.join(hatalar[:3])}")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Dosya okunamadı: {e}")
 
     st.markdown("---")
     # Tüm ürünler özet tablosu
@@ -1804,6 +1886,7 @@ elif sayfa == "🎯  Kampanya Takip":
                         st.error("Kampanya adı zorunludur.")
                     else:
                         yeni_id = ekle_kampanya(k_adi.strip(), k_firma, str(k_bas), str(k_bit), k_not.strip())
+                        st.cache_data.clear()
                         st.success(f"✅ '{k_adi}' kampanyası oluşturuldu! (ID: {yeni_id})")
                         st.rerun()
 
@@ -1866,8 +1949,8 @@ elif sayfa == "🎯  Kampanya Takip":
                                 st.warning("Kampanya silindi.")
                                 st.rerun()
 
-                    # Kampanya kapat — adet sor
-                    if kapat_flag:
+                    # Kampanya kapat — adet sor (kapat_flag form içinden geliyor, güvenli)
+                    if kapat_flag if 'kapat_flag' in dir() else False:
                         st.session_state[f"kapat_onay_{kid}"] = True
 
                     if st.session_state.get(f"kapat_onay_{kid}"):
