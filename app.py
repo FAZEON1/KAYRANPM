@@ -18,7 +18,8 @@ from database import (initialize_db, onayla_siparis, reddet_siparis,
                       ekle_kampanya_urun, get_kampanya_urunler,
                       guncelle_kampanya_urun, sil_kampanya_urun,
                       sil_urun, get_tum_sku_listesi, get_client,
-                      get_gecmis_satis_tum_firmalar)
+                      get_gecmis_satis_tum_firmalar,
+                      get_kampanya_destek_ortalamalari)
 from analitik import dashboard_hesapla, genel_analiz_hesapla, tum_urunler_listesi, siparis_onerisi_listesi
 from excel_islemler import (excel_yukle_ana_stok, excel_yukle_firma_stoklari,
                             excel_yukle_yoldaki_urunler, create_sample_excel_bytes)
@@ -1640,8 +1641,30 @@ elif sayfa == "📋  Tüm Ürünler":
     # Tüm ürünler özet tablosu
     st.markdown("#### 📊 Tüm Ürünler Özet")
     rows_oz = []
+    # Kampanya destek ortalamalarını çek
+    try:
+        destek_map = get_kampanya_destek_ortalamalari()
+    except:
+        destek_map = {}
+
     for u in urun_data:
         fs = u.get("firma_stoklari", {})
+        satis = u.get('satis_fiyati') or 0
+        fcp = u.get('final_cost_price') or 0
+
+        # Net Kar hesabı
+        destek_bilgi = destek_map.get(u["sku"], {})
+        ort_destek = destek_bilgi.get("ort_toplam_destek", 0)
+        kamp_sayisi = destek_bilgi.get("kampanya_sayisi", 0)
+
+        if satis > 0 and fcp > 0:
+            ham_kar = satis - fcp
+            net_kar = ham_kar - ort_destek
+            net_kar_str = f"${net_kar:,.2f}" + (f" ({kamp_sayisi} kamp.)" if kamp_sayisi > 0 else "")
+        else:
+            net_kar = None
+            net_kar_str = "—"
+
         rows_oz.append({
             "SKU": u["sku"],
             "Ürün Adı": u["urun_adi"],
@@ -1653,10 +1676,13 @@ elif sayfa == "📋  Tüm Ürünler":
             "MONDAY": fs.get("MONDAY", 0),
             "KANAL": fs.get("KANAL", 0),
             "Toplam Stok": u.get("toplam_stok", u.get("bizim_stok", 0)),
-            "Satış Fiyatı ($)": f"${u.get('satis_fiyati',0):,.2f}" if u.get('satis_fiyati') else "—",
+            "Satış Fiyatı ($)": f"${satis:,.2f}" if satis else "—",
             "FOB Price ($)": f"${u.get('fob_price', u.get('son_fob', 0)):,.2f}" if u.get('fob_price') or u.get('son_fob') else "—",
             "Cost Price ($)": f"${u.get('cost_price', u.get('son_cost_price', 0)):,.2f}" if u.get('cost_price') or u.get('son_cost_price') else "—",
-            "⭐ FINAL COST ($)": f"${u.get('final_cost_price',0):,.2f}" if u.get('final_cost_price') else "—",
+            "⭐ FINAL COST ($)": f"${fcp:,.2f}" if fcp else "—",
+            "Ort. Destek ($)": f"${ort_destek:,.2f}" if kamp_sayisi > 0 else "—",
+            "💰 Net Kar ($)": net_kar_str,
+            "_net_kar": net_kar or 0,
             "Sipariş Sayısı": u.get("siparis_sayisi", 0),
         })
     df_oz = pd.DataFrame(rows_oz)
@@ -1669,8 +1695,23 @@ elif sayfa == "📋  Tüm Ürünler":
             v = row.get("Toplam Stok", 0)
             if isinstance(v, (int, float)) and v > 0:
                 styles[cols.index("Toplam Stok")] = "background-color:#0D2744; color:#90CAF9; font-weight:700"
+        if "💰 Net Kar ($)" in cols:
+            nk = row.get("_net_kar", 0)
+            if isinstance(nk, (int, float)):
+                if nk > 0:
+                    styles[cols.index("💰 Net Kar ($)")] = "background-color:#1B5E20; color:#A5D6A7; font-weight:700"
+                elif nk < 0:
+                    styles[cols.index("💰 Net Kar ($)")] = "background-color:#7F0000; color:#FFCDD2; font-weight:700"
         return styles
-    st.dataframe(df_oz.style.apply(oz_rengi, axis=1), use_container_width=True, height=400, hide_index=True)
+
+    # Gösterilecek kolonlar (_net_kar gizli)
+    goster_oz = [c for c in df_oz.columns if c != "_net_kar"]
+    st.dataframe(
+        df_oz[goster_oz].style.apply(oz_rengi, axis=1),
+        use_container_width=True, height=400, hide_index=True
+    )
+    if destek_map:
+        st.caption(f"💡 Net Kar = Satış Fiyatı − Final Cost Price − Ortalama Kampanya Desteği (birim). Kampanya verisi olan {len(destek_map)} ürün için hesaplandı.")
 
     # ── Ürün Silme ────────────────────────────────────────────────
     st.markdown("---")
@@ -2441,9 +2482,16 @@ elif sayfa == "📦  Sipariş Önerisi":
               <div style="color:#FFD54F; font-size:13px; margin-top:4px; font-weight:600;">
                 💡 {oneri_mesaj}
               </div>
-              {"<div style='color:#80CBC4; font-size:12px; margin-top:4px;'>💵 Final Cost Price: $" + f"{fcp:,.2f}" + " | Satış: $" + f"{satis:,.2f}" + "</div>" if fcp > 0 else ""}
             </div>
             """, unsafe_allow_html=True)
+
+            # FCP + satis bilgisi ayrı olarak göster
+            if fcp > 0:
+                st.markdown(
+                    f'<div style="color:#80CBC4; font-size:12px; margin-top:2px; margin-bottom:6px;">'
+                    f'💵 Final Cost Price: ${fcp:,.2f} | Satış: ${satis:,.2f}</div>',
+                    unsafe_allow_html=True
+                )
 
             col_s1, col_s2, col_s3 = st.columns([2,1,1])
             with col_s2:
@@ -2454,6 +2502,7 @@ elif sayfa == "📦  Sipariş Önerisi":
                 if st.button("📦 Sipariş Önerisi Ekle", key=f"sp_btn_{sku}", use_container_width=True):
                     from database import ekle_siparis_onerisi
                     ekle_siparis_onerisi("G5F", sku, urun["urun_adi"], miktar)
+                    st.cache_data.clear()
                     st.success(f"✅ {urun['urun_adi']} için {miktar} adet sipariş önerisi oluşturuldu!")
                     st.rerun()
 

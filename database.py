@@ -313,3 +313,34 @@ def get_gecmis_satis_tum_firmalar(sku):
                 .eq("sku", sku)
                 .order("yukleme_tarihi").execute())
     return rows
+
+@st.cache_data(ttl=120, show_spinner=False)
+def get_kampanya_destek_ortalamalari():
+    """
+    Tüm kampanyalardaki ürün bazında ortalama birim destek tutarlarını döndürür.
+    Dönen dict: {sku: {'ort_firma_destek': float, 'ort_ek_destek': float, 'kampanya_sayisi': int}}
+    """
+    rows = _rows(get_client().table("kampanya_urunler").select(
+        "sku, birim_firma_destek, birim_ek_destek"
+    ).execute())
+    
+    from collections import defaultdict
+    sku_data = defaultdict(list)
+    for r in rows:
+        sku_data[r["sku"]].append({
+            "firma": float(r.get("birim_firma_destek") or 0),
+            "ek": float(r.get("birim_ek_destek") or 0),
+        })
+    
+    result = {}
+    for sku, kayitlar in sku_data.items():
+        if kayitlar:
+            ort_firma = sum(k["firma"] for k in kayitlar) / len(kayitlar)
+            ort_ek = sum(k["ek"] for k in kayitlar) / len(kayitlar)
+            result[sku] = {
+                "ort_firma_destek": round(ort_firma, 2),
+                "ort_ek_destek": round(ort_ek, 2),
+                "ort_toplam_destek": round(ort_firma + ort_ek, 2),
+                "kampanya_sayisi": len(kayitlar),
+            }
+    return result
