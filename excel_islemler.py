@@ -1,6 +1,33 @@
 import pandas as pd
 from datetime import datetime
 from database import upsert_urun, upsert_firma_stok, get_client, upsert_yoldaki_urun
+import math
+
+def safe_float(val, default=0.0):
+    """NaN ve None değerlerini güvenli şekilde float'a çevirir."""
+    try:
+        v = float(val or default)
+        return default if (math.isnan(v) or math.isinf(v)) else v
+    except:
+        return default
+
+def safe_int(val, default=0):
+    """NaN ve None değerlerini güvenli şekilde int'e çevirir."""
+    try:
+        v = float(val or default)
+        if math.isnan(v) or math.isinf(v):
+            return default
+        return int(v)
+    except:
+        return default
+
+def safe_str(val, default=""):
+    """NaN ve None değerlerini güvenli şekilde str'ye çevirir."""
+    if val is None:
+        return default
+    s = str(val).strip()
+    return default if s.lower() in ("nan", "none", "nat") else s
+
 
 def tr_upper(s):
     """Türkçe karakterleri de doğru büyüten upper fonksiyonu"""
@@ -65,26 +92,15 @@ def excel_yukle_ana_stok(dosya_yolu):
                 kategori = str(row.get(kolon_map.get("KATEGORI", ""), "")).strip() if "KATEGORI" in kolon_map else ""
                 marka = str(row.get(kolon_map.get("MARKA", ""), "")).strip() if "MARKA" in kolon_map else ""
                 ozellikler = str(row.get(kolon_map.get("OZELLIKLER", ""), "")).strip() if "OZELLIKLER" in kolon_map else ""
-                try: satis_fiyati = float(row.get(kolon_map.get("SATIS_FIYATI", ""), 0) or 0)
-                except: satis_fiyati = 0.0
-                try: alis_fiyati = float(row.get(kolon_map.get("ALIS_FIYATI", ""), 0) or 0)
-                except: alis_fiyati = 0.0
-                try: hedef_kar = float(row.get(kolon_map.get("HEDEF_KAR", ""), 0) or 0)
-                except: hedef_kar = 0.0
-                try: bizim_stok = int(row.get(kolon_map.get("BIZIM_STOK", ""), 0) or 0)
-                except: bizim_stok = 0
-
-                # Yoldaki bilgisi G5F STOK sekmesinden oku
-                try: yoldaki_miktar = int(row.get(kolon_map.get("YOLDAKI_MIKTAR", ""), 0) or 0)
-                except: yoldaki_miktar = 0
-                try:
-                    varis_tarihi = str(row.get(kolon_map.get("VARIS_TARIHI", ""), "") or "").strip()
-                    if varis_tarihi == "nan": varis_tarihi = ""
-                except: varis_tarihi = ""
-                try:
-                    yoldaki_tedarikci = str(row.get(kolon_map.get("YOLDAKI_TEDARIKCI", ""), "") or "").strip()
-                    if yoldaki_tedarikci == "nan": yoldaki_tedarikci = ""
-                except: yoldaki_tedarikci = ""
+                satis_fiyati = safe_float(row.get(kolon_map.get("SATIS_FIYATI", ""), 0))
+                alis_fiyati = safe_float(row.get(kolon_map.get("ALIS_FIYATI", ""), 0))
+                hedef_kar = safe_float(row.get(kolon_map.get("HEDEF_KAR", ""), 0))
+                bizim_stok = safe_int(row.get(kolon_map.get("BIZIM_STOK", ""), 0))
+                yoldaki_miktar = safe_int(row.get(kolon_map.get("YOLDAKI_MIKTAR", ""), 0))
+                varis_tarihi = safe_str(row.get(kolon_map.get("VARIS_TARIHI", ""), ""))
+                yoldaki_tedarikci = safe_str(row.get(kolon_map.get("YOLDAKI_TEDARIKCI", ""), ""))
+                kategori = safe_str(row.get(kolon_map.get("KATEGORI", ""), ""))
+                marka = safe_str(row.get(kolon_map.get("MARKA", ""), ""))
 
                 upsert_urun(sku, urun_adi, kategori, marka, satis_fiyati, alis_fiyati, hedef_kar, "", bizim_stok, 0)
 
@@ -155,14 +171,9 @@ def excel_yukle_firma_stoklari(dosya_yolu):
                     sku = normalize_sku(row[kolon_map["SKU"]])
                     if not sku or sku == "NAN":
                         continue
-                    urun_adi = str(row.get(kolon_map.get("URUN_ADI", ""), "")).strip() if "URUN_ADI" in kolon_map else ""
-                    if urun_adi == "nan": urun_adi = ""
-                    stok = int(row.get(kolon_map.get("STOK", ""), 0) or 0) if "STOK" in kolon_map else 0
-                    try:
-                        satis_raw = row.get(kolon_map.get("SATIS", ""), 0)
-                        satis = int(float(satis_raw)) if satis_raw and str(satis_raw) != "nan" else 0
-                    except:
-                        satis = 0
+                    urun_adi = safe_str(row.get(kolon_map.get("URUN_ADI", ""), "")) if "URUN_ADI" in kolon_map else ""
+                    stok = safe_int(row.get(kolon_map.get("STOK", ""), 0)) if "STOK" in kolon_map else 0
+                    satis = safe_int(row.get(kolon_map.get("SATIS", ""), 0)) if "SATIS" in kolon_map else 0
 
                     # Eğer SKU urunler tablosunda yoksa otomatik ekle
                     _sb = get_client()
